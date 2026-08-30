@@ -45,6 +45,7 @@ export class ScanView {
         this.tx = 0;
         this.ty = 0;
         this.bitmap = null;
+        this.emptyStateEl = document.getElementById('scanEmptyState');
         this._toolInstances = {};
         this._activeToolName = store.activeTool;
         this._panStart = null;
@@ -125,6 +126,11 @@ export class ScanView {
         this.scale = newScale;
         this.onZoomChange?.(this.scale);
         this.draw();
+    }
+
+    zoomTo(scale) {
+        const clamped = Math.min(8, Math.max(0.05, scale));
+        this.zoomBy(clamped / this.scale);
     }
 
     cssToImage(clientX, clientY) {
@@ -225,6 +231,8 @@ export class ScanView {
             ctx.restore();
             this._drawSelections(ctx);
         }
+
+        if (this.emptyStateEl) this.emptyStateEl.style.display = this.bitmap ? 'none' : '';
 
         this._currentTool()?.drawOverlay?.(ctx, this);
     }

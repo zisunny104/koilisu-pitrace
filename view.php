@@ -57,10 +57,6 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         border: 0;
     }
 
-    .pane-card {
-        border-radius: 12px;
-    }
-
     .pane-card-header {
         display: flex;
         align-items: center;
@@ -96,11 +92,45 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         outline: 3px solid var(--ts-primary-500, #3b82f6);
     }
 
+    .pane-empty-state {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        text-align: center;
+        padding: 1rem;
+        pointer-events: none;
+    }
+
     .pane-toolbar {
         display: flex;
         align-items: center;
         gap: 0.5rem;
         flex-wrap: wrap;
+    }
+
+    /* Tocas 的 .ts-selection 用 display:none 藏原生 radio、且完全沒有 focus-visible 樣式，
+       導致鍵盤使用者連 Tab 進工具選取群組都做不到。改用可視覺隱藏但仍可聚焦的手法，
+       並補上 focus-visible 外框，讓原生 radiogroup 方向鍵切換恢復作用。 */
+    #mainToolbar [role="radiogroup"] input[type="radio"] {
+        display: block;
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+
+    #mainToolbar [role="radiogroup"] input[type="radio"]:focus-visible + .text {
+        outline: 2px solid var(--ts-primary-700, #2563eb);
+        outline-offset: 2px;
     }
 
     .piece-thumb-strip {
@@ -183,16 +213,26 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
     <a href="#main-content" class="skip-link">跳到主要內容</a>
 
     <div class="main-content">
-        <div class="ts-container has-vertically-padded">
+        <div class="ts-container has-vertically-padded" id="pageContainer">
 
             <!-- 標題 -->
-            <div class="ts-header is-heavy is-large is-start-icon">
-                <span class="ts-icon is-file-image-icon" aria-hidden="true"></span>
-                Pitrace 拾印 <span
-                    style="font-size:0.875rem;color:var(--ts-gray-500);font-weight:normal;margin-left:0.5rem;">v<?= htmlspecialchars($appVersion) ?></span>
-            </div>
-            <div class="ts-text is-secondary">
-                掃描手繪稿，去背、校正、輸出透明 PNG，全程本機處理不上傳。
+            <div class="ts-grid is-middle-aligned">
+                <div class="column is-fluid">
+                    <div class="ts-header is-heavy is-large is-start-icon">
+                        <span class="ts-icon is-file-image-icon" aria-hidden="true"></span>
+                        Pitrace 拾印 <span
+                            style="font-size:0.875rem;color:var(--ts-gray-500);font-weight:normal;margin-left:0.5rem;">v<?= htmlspecialchars($appVersion) ?></span>
+                    </div>
+                    <div class="ts-text is-secondary">
+                        掃描手繪稿，去背、校正、輸出透明 PNG，全程本機處理不上傳。
+                    </div>
+                </div>
+                <div class="column mobile:has-hidden tablet:has-hidden desktop:has-hidden">
+                    <button id="btnToggleWidth" class="ts-button is-icon is-outlined" aria-label="使用完整頁面寬度"
+                        title="使用完整頁面寬度" aria-pressed="false">
+                        <span class="ts-icon is-arrows-left-right-icon" aria-hidden="true"></span>
+                    </button>
+                </div>
             </div>
 
             <div class="ts-divider has-vertically-spaced"></div>
@@ -201,22 +241,16 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
 
                 <!-- 專案操作列 -->
                 <div class="pane-toolbar" role="toolbar" aria-label="專案操作" id="projectToolbar">
-                    <button id="btnNewProject" class="ts-button is-outlined is-start-icon">
-                        <span class="ts-icon is-plus-icon" aria-hidden="true"></span>
-                        新增專案
-                    </button>
-                    <button id="btnOpenProject" class="ts-button is-outlined is-start-icon">
-                        <span class="ts-icon is-folder-open-icon" aria-hidden="true"></span>
-                        開啟專案
-                    </button>
-                    <button id="btnSaveProject" class="ts-button is-outlined is-start-icon">
-                        <span class="ts-icon is-floppy-disk-icon" aria-hidden="true"></span>
-                        儲存專案
-                    </button>
-                    <button id="btnImportImage" class="ts-button is-primary is-start-icon">
-                        <span class="ts-icon is-upload-icon" aria-hidden="true"></span>
-                        匯入圖片
-                    </button>
+                    <div class="ts-buttons">
+                        <button id="btnImportImage" class="ts-button is-primary is-start-icon">
+                            <span class="ts-icon is-upload-icon" aria-hidden="true"></span>
+                            匯入圖片
+                        </button>
+                        <button class="ts-button is-primary is-icon" data-dropdown="projectMenuDropdown"
+                            aria-label="更多專案操作" title="更多專案操作">
+                            <span class="ts-icon is-chevron-down-icon" aria-hidden="true"></span>
+                        </button>
+                    </div>
                     <input type="file" id="fileOpenProject" accept=".pitra" class="visually-hidden">
                     <input type="file" id="fileImportImage" accept="image/png,image/jpeg,image/webp" multiple
                         class="visually-hidden">
@@ -230,6 +264,23 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                     </div>
                 </div>
 
+                <!-- 專案選單下拉（放在 toolbar 外，避免干擾方向鍵巡覽） -->
+                <div class="ts-dropdown" id="projectMenuDropdown">
+                    <button id="btnNewProject" class="item">
+                        <span class="ts-icon is-plus-icon" aria-hidden="true"></span>
+                        新增專案
+                    </button>
+                    <button id="btnOpenProject" class="item">
+                        <span class="ts-icon is-folder-open-icon" aria-hidden="true"></span>
+                        開啟專案
+                    </button>
+                    <div class="divider"></div>
+                    <button id="btnSaveProject" class="item">
+                        <span class="ts-icon is-floppy-disk-icon" aria-hidden="true"></span>
+                        儲存專案
+                    </button>
+                </div>
+
                 <div aria-live="polite" class="ts-text is-description visually-hidden" id="statusRegion"></div>
 
                 <div class="ts-divider has-vertically-spaced-small"></div>
@@ -239,7 +290,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                     <div class="ts-selection is-compact" role="radiogroup" aria-label="選取工具">
                         <label class="item" title="矩形選取（M）">
                             <input type="radio" name="tool" value="rect" id="tool-rect" checked>
-                            <div class="text"><span class="ts-icon is-vector-square-icon" aria-hidden="true"></span>
+                            <div class="text"><span class="ts-icon is-crop-simple-icon" aria-hidden="true"></span>
                                 矩形</div>
                         </label>
                         <label class="item" title="套索選取（L）">
@@ -258,54 +309,81 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                         </label>
                     </div>
 
-                    <button id="btnUndo" class="ts-button is-icon" aria-label="復原上一步" title="復原（Ctrl+Z）" disabled>
-                        <span class="ts-icon is-arrow-rotate-left-icon" aria-hidden="true"></span>
-                    </button>
-                    <button id="btnRedo" class="ts-button is-icon" aria-label="重做" title="重做（Ctrl+Shift+Z）" disabled>
-                        <span class="ts-icon is-arrow-rotate-right-icon" aria-hidden="true"></span>
-                    </button>
+                    <div class="ts-buttons">
+                        <button id="btnUndo" class="ts-button is-icon" aria-label="復原上一步" title="復原（Ctrl+Z）"
+                            disabled>
+                            <span class="ts-icon is-reply-icon" aria-hidden="true"></span>
+                        </button>
+                        <button id="btnRedo" class="ts-button is-icon" aria-label="重做" title="重做（Ctrl+Shift+Z）"
+                            disabled>
+                            <span class="ts-icon is-share-icon" aria-hidden="true"></span>
+                        </button>
+                    </div>
 
-                    <button id="btnRotateLeft" class="ts-button is-icon" aria-label="向左旋轉 90 度" title="向左旋轉 90 度">
-                        <span class="ts-icon is-rotate-left-icon" aria-hidden="true"></span>
-                    </button>
-                    <button id="btnRotateRight" class="ts-button is-icon" aria-label="向右旋轉 90 度" title="向右旋轉 90 度">
-                        <span class="ts-icon is-rotate-right-icon" aria-hidden="true"></span>
-                    </button>
+                    <div class="ts-buttons">
+                        <button id="btnRotateLeft" class="ts-button is-icon" aria-label="向左旋轉 90 度"
+                            title="向左旋轉 90 度">
+                            <span class="ts-icon is-rotate-left-icon" aria-hidden="true"></span>
+                        </button>
+                        <button id="btnRotateRight" class="ts-button is-icon" aria-label="向右旋轉 90 度"
+                            title="向右旋轉 90 度">
+                            <span class="ts-icon is-rotate-right-icon" aria-hidden="true"></span>
+                        </button>
+                    </div>
 
-                    <button id="btnZoomOut" class="ts-button is-icon" aria-label="縮小畫面" title="縮小畫面">
-                        <span class="ts-icon is-magnifying-glass-minus-icon" aria-hidden="true"></span>
-                    </button>
-                    <span class="ts-text is-description" id="zoomDisplay" style="min-width:3.5rem;text-align:center;">100%</span>
-                    <button id="btnZoomIn" class="ts-button is-icon" aria-label="放大畫面" title="放大畫面">
-                        <span class="ts-icon is-magnifying-glass-plus-icon" aria-hidden="true"></span>
-                    </button>
-                    <button id="btnZoomFit" class="ts-button is-icon" aria-label="縮放至符合視窗" title="縮放至符合視窗">
-                        <span class="ts-icon is-expand-icon" aria-hidden="true"></span>
-                    </button>
+                    <div class="ts-buttons">
+                        <button id="btnZoomOut" class="ts-button is-icon" aria-label="縮小畫面" title="縮小畫面">
+                            <span class="ts-icon is-magnifying-glass-minus-icon" aria-hidden="true"></span>
+                        </button>
+                        <span id="zoomDisplay" class="ts-button" role="button" tabindex="0"
+                            aria-label="目前縮放 100%，按 Enter 可輸入數值">100%</span>
+                        <input type="text" id="zoomInput" class="ts-button" inputmode="decimal"
+                            aria-label="輸入縮放百分比" style="display:none;">
+                        <button id="btnZoomIn" class="ts-button is-icon" aria-label="放大畫面" title="放大畫面">
+                            <span class="ts-icon is-magnifying-glass-plus-icon" aria-hidden="true"></span>
+                        </button>
+                        <button id="btnZoomFit" class="ts-button is-icon" aria-label="縮放至符合視窗" title="縮放至符合視窗">
+                            <span class="ts-icon is-expand-icon" aria-hidden="true"></span>
+                        </button>
+                        <button id="btnFullscreen" class="ts-button is-icon" aria-label="全螢幕檢視" title="全螢幕檢視"
+                            aria-pressed="false">
+                            <span class="ts-icon is-window-maximize-icon" aria-hidden="true"></span>
+                        </button>
+                    </div>
                 </div>
 
                 <!-- 雙視窗編輯區 -->
-                <div class="ts-grid is-relaxed">
+                <div class="ts-grid">
                     <div class="column desktop-:is-16-wide desktop+:is-9-wide">
-                        <div class="ts-box is-raised pane-card">
+                        <div class="ts-box is-raised">
                             <div class="pane-card-header">
                                 <span class="ts-icon is-image-icon" aria-hidden="true"></span>
                                 <span>原始掃描</span>
                             </div>
                             <div class="pane-canvas-wrap">
                                 <canvas id="scanCanvas" tabindex="0" aria-label="原始掃描畫布，方向鍵平移、+/− 縮放、0 符合視窗"></canvas>
+                                <div class="pane-empty-state" id="scanEmptyState">
+                                    <span class="ts-icon is-images-icon is-heading" aria-hidden="true"></span>
+                                    <div class="ts-text is-description">還沒有匯入掃描圖片</div>
+                                    <div class="ts-text is-description">點擊上方「匯入圖片」開始</div>
+                                </div>
                             </div>
                         </div>
                     </div>
 
                     <div class="column desktop-:is-16-wide desktop+:is-7-wide">
-                        <div class="ts-box is-raised pane-card">
+                        <div class="ts-box is-raised">
                             <div class="pane-card-header">
                                 <span class="ts-icon is-wand-magic-sparkles-icon" aria-hidden="true"></span>
                                 <span>即時預覽</span>
                             </div>
                             <div class="pane-canvas-wrap is-preview">
                                 <canvas id="previewCanvas" aria-label="目前作品的即時預覽，棋盤格代表透明區域"></canvas>
+                                <div class="pane-empty-state" id="previewEmptyState">
+                                    <span class="ts-icon is-crop-icon is-heading" aria-hidden="true"></span>
+                                    <div class="ts-text is-description">還沒有可以預覽的選區呢</div>
+                                    <div class="ts-text is-description">框選一件作品後會顯示在這裡</div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -543,6 +621,38 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
     });
     document.getElementById('theme-system').addEventListener('change', function() {
         if (this.checked) setTheme('system');
+    });
+
+    // 大螢幕版面寬度切換（容器寬度 / 滿版寬度）
+    function setWidthMode(mode) {
+        const container = document.getElementById('pageContainer');
+        const btn = document.getElementById('btnToggleWidth');
+        const icon = btn.querySelector('.ts-icon');
+        const isFluid = mode === 'fluid';
+        container.classList.toggle('is-fluid', isFluid);
+        btn.setAttribute('aria-pressed', String(isFluid));
+        const label = isFluid ? '維持標準寬度' : '使用完整頁面寬度';
+        btn.setAttribute('aria-label', label);
+        btn.title = label;
+        icon.className = `ts-icon ${isFluid ? 'is-arrows-left-right-to-line-icon' : 'is-arrows-left-right-icon'}`;
+        document.cookie = `preferred-width=${mode}; path=/; max-age=31536000`;
+    }
+
+    function getPreferredWidth() {
+        const cookies = document.cookie.split(';');
+        for (let cookie of cookies) {
+            const [name, value] = cookie.trim().split('=');
+            if (name === 'preferred-width') return value;
+        }
+        return 'contained';
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        setWidthMode(getPreferredWidth());
+        document.getElementById('btnToggleWidth').addEventListener('click', function() {
+            const nowFluid = document.getElementById('pageContainer').classList.contains('is-fluid');
+            setWidthMode(nowFluid ? 'contained' : 'fluid');
+        });
     });
     </script>
 </body>

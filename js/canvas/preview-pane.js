@@ -97,6 +97,7 @@ export class PreviewPane {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.statusEl = statusEl;
+        this.emptyStateEl = document.getElementById('previewEmptyState');
 
         store.addEventListener('active-piece-changed', () => this.refresh());
         store.addEventListener('piece-changed', () => this.refresh());
@@ -121,10 +122,18 @@ export class PreviewPane {
         ctx.clearRect(0, 0, rect.width, rect.height);
 
         const piece = store.getActivePiece();
-        if (!piece) return;
+        if (!piece) {
+            if (this.emptyStateEl) this.emptyStateEl.style.display = '';
+            return;
+        }
 
         const rendered = await renderPiece(piece, {});
-        if (!rendered) return;
+        if (!rendered) {
+            if (this.emptyStateEl) this.emptyStateEl.style.display = '';
+            return;
+        }
+
+        if (this.emptyStateEl) this.emptyStateEl.style.display = 'none';
 
         const scale = Math.min(rect.width / rendered.width, rect.height / rendered.height, 1);
         const dw = rendered.width * scale;

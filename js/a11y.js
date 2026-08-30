@@ -11,6 +11,7 @@ export function announce(el, msg) {
 function isFocusableLeaf(el) {
     if (el.disabled) return false;
     if (el.classList?.contains('visually-hidden')) return false;
+    if (getComputedStyle(el).display === 'none') return false;
     const tag = el.tagName;
     if (tag === 'BUTTON' || tag === 'SELECT') return true;
     if (tag === 'INPUT' && el.type !== 'radio' && el.type !== 'file') return true;
@@ -56,6 +57,8 @@ export function makeToolbarArrowNav(toolbarEl) {
 
     toolbarEl.addEventListener('keydown', (evt) => {
         if (!['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'Home', 'End'].includes(evt.key)) return;
+        const inRadiogroup = evt.target.closest('[role="radiogroup"]');
+        if (inRadiogroup && evt.key !== 'Home' && evt.key !== 'End') return;
         const items = getItems();
         const currentIndex = items.indexOf(document.activeElement);
         if (currentIndex === -1) return;

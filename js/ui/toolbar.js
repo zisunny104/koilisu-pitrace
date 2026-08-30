@@ -142,13 +142,82 @@ function wireMainToolbar(scanView, statusEl) {
         rotatePieceBy(piece.id, 90);
     });
 
-    const zoomDisplay = el('zoomDisplay');
-    scanView.onZoomChange = (scale) => {
-        zoomDisplay.textContent = `${Math.round(scale * 100)}%`;
-    };
+    wireZoomControl(scanView);
     el('btnZoomOut').addEventListener('click', () => scanView.zoomBy(1 / 1.2));
     el('btnZoomIn').addEventListener('click', () => scanView.zoomBy(1.2));
     el('btnZoomFit').addEventListener('click', () => scanView.fitToView());
+
+    wireFullscreenToggle();
+}
+
+function wireZoomControl(scanView) {
+    const zoomDisplay = el('zoomDisplay');
+    const zoomInput = el('zoomInput');
+    let applying = false;
+
+    scanView.onZoomChange = (scale) => {
+        const pct = Math.round(scale * 100);
+        zoomDisplay.textContent = `${pct}%`;
+        zoomDisplay.setAttribute('aria-label', `目前縮放 ${pct}%，按 Enter 可輸入數值`);
+    };
+
+    function enterEdit() {
+        zoomInput.value = zoomDisplay.textContent.replace('%', '');
+        zoomDisplay.style.display = 'none';
+        zoomInput.style.display = '';
+        zoomInput.focus();
+        zoomInput.select();
+    }
+
+    function exitEdit(apply) {
+        if (applying) return;
+        applying = true;
+        if (apply) {
+            const val = Number(zoomInput.value.replace('%', '').trim());
+            if (Number.isFinite(val) && val > 0) scanView.zoomTo(val / 100);
+        }
+        zoomInput.style.display = 'none';
+        zoomDisplay.style.display = '';
+        applying = false;
+    }
+
+    zoomDisplay.addEventListener('click', enterEdit);
+    zoomDisplay.addEventListener('keydown', (evt) => {
+        if (evt.key === 'Enter' || evt.key === ' ') {
+            evt.preventDefault();
+            enterEdit();
+        }
+    });
+    zoomInput.addEventListener('keydown', (evt) => {
+        if (evt.key === 'Enter') {
+            evt.preventDefault();
+            exitEdit(true);
+        } else if (evt.key === 'Escape') {
+            evt.preventDefault();
+            exitEdit(false);
+        }
+    });
+    zoomInput.addEventListener('blur', () => exitEdit(true));
+}
+
+function wireFullscreenToggle() {
+    const btn = el('btnFullscreen');
+    const target = document.getElementById('main-content');
+    const icon = btn.querySelector('.ts-icon');
+
+    btn.addEventListener('click', () => {
+        if (document.fullscreenElement) document.exitFullscreen();
+        else target.requestFullscreen();
+    });
+
+    document.addEventListener('fullscreenchange', () => {
+        const isFs = document.fullscreenElement === target;
+        btn.setAttribute('aria-pressed', String(isFs));
+        const label = isFs ? '結束全螢幕' : '全螢幕檢視';
+        btn.setAttribute('aria-label', label);
+        btn.title = label;
+        icon.className = `ts-icon ${isFs ? 'is-compress-icon' : 'is-window-maximize-icon'}`;
+    });
 }
 
 function wirePieceList(statusEl) {
