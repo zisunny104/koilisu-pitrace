@@ -1,7 +1,7 @@
 // 左側「原始掃描」畫布：管理平移/縮放 viewport transform，並把指標/鍵盤事件轉發給目前工具。
 // 選取資料一律以原始影像像素座標儲存（見 cssToImage），平移/縮放因此不會影響已存的選取範圍。
 
-import { store } from '../state.js';
+import { store, getPieceColor } from '../state.js';
 import { RectSelectTool } from '../tools/rect-select.js';
 import { LassoTool } from '../tools/lasso.js';
 import { EyedropperTool } from '../processing/bg-remove.js';
@@ -284,8 +284,8 @@ export class ScanView {
                 }
             }
 
-            ctx.lineWidth = (isActive ? 2 : 1) / this.scale;
-            ctx.strokeStyle = isActive ? '#f97316' : 'rgba(148,163,184,0.8)';
+            ctx.lineWidth = (isActive ? 2.5 : 1.5) / this.scale;
+            ctx.strokeStyle = isActive ? '#f97316' : getPieceColor(piece);
 
             if (piece.selection.type === 'rect' && piece.selection.rect) {
                 const r = piece.selection.rect;

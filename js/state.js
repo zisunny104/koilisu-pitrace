@@ -34,6 +34,18 @@ export function createPiece(scanId, overrides = {}) {
     };
 }
 
+const PIECE_COLOR_PALETTE = [
+    '#10b981', '#ec4899', '#8b5cf6', '#ef4444',
+    '#06b6d4', '#65a30d', '#4338ca', '#0d9488',
+];
+
+// 依物件在專案中的順序自動輪流配色；piece.color 是保留給未來手動自訂顏色的擴充點，目前尚未使用。
+export function getPieceColor(piece) {
+    if (piece.color) return piece.color;
+    const idx = store.project.pieces.indexOf(piece);
+    return PIECE_COLOR_PALETTE[(idx < 0 ? 0 : idx) % PIECE_COLOR_PALETTE.length];
+}
+
 const HISTORY_LIMIT = 50;
 const HISTORY_COALESCE_MS = 500;
 

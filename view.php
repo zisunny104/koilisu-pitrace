@@ -267,11 +267,23 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
     }
 
     .piece-thumb .thumb-label {
-        display: block;
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
         padding: 0.35rem 0.5rem;
         font-size: 0.8rem;
-        white-space: nowrap;
+    }
+
+    .piece-thumb .thumb-color-dot {
+        flex-shrink: 0;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+    }
+
+    .piece-thumb .thumb-label-text {
         overflow: hidden;
+        white-space: nowrap;
         text-overflow: ellipsis;
     }
 

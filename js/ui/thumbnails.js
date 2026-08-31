@@ -1,6 +1,6 @@
 // 作品縮圖清單：依 store.project.pieces 動態產生可點擊、可鍵盤操作（Tab 逐一移動）的縮圖按鈕。
 
-import { store } from '../state.js';
+import { store, getPieceColor } from '../state.js';
 import { renderPiece } from '../canvas/preview-pane.js';
 import { announce } from '../a11y.js';
 
@@ -45,7 +45,18 @@ export class ThumbnailStrip {
 
             const label = document.createElement('span');
             label.className = 'thumb-label';
-            label.textContent = piece.name;
+
+            const dot = document.createElement('span');
+            dot.className = 'thumb-color-dot';
+            dot.style.backgroundColor = getPieceColor(piece);
+            dot.setAttribute('aria-hidden', 'true');
+            label.appendChild(dot);
+
+            const labelText = document.createElement('span');
+            labelText.className = 'thumb-label-text';
+            labelText.textContent = piece.name;
+            label.appendChild(labelText);
+
             btn.appendChild(label);
 
             item.appendChild(btn);
