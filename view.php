@@ -31,7 +31,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
     }
 
     /* 內容區採 flex 直向撐滿可用視窗高度，避免視窗夠高時工作區底下留白、或視窗偏矮時底部列被切一截；
-       只有雙視窗編輯區（.pane-row）真正吃掉剩餘空間，其餘列（工具列、清單、屬性面板）維持自身高度。 */
+       只有編輯器主體（.editor-shell）真正吃掉剩餘空間，其餘列（工具列）維持自身高度。 */
     #pageContainer {
         flex: 1;
         display: flex;
@@ -46,21 +46,100 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         min-height: 0;
     }
 
-    .pane-row {
-        flex: 1;
-        min-height: 0;
+    :root {
+        --pitrace-dock-width: 380px;
     }
 
-    .pane-row > .column {
-        display: flex;
-        flex-direction: column;
-    }
-
-    .pane-row > .column > .ts-box {
+    /* 編輯器主體（畫布 + 右側 dock）。
+       Mobile/Tablet（<1024px）：單欄堆疊，維持整頁捲動的今日行為。
+       Desktop+（≥1024px）：畫布是唯一主要工作區，右側收攏成固定寬度 dock，
+       內部三個面板（預覽／物件清單／物件設定）各自捲動，不需要捲動整頁。 */
+    .editor-shell {
         flex: 1;
         display: flex;
         flex-direction: column;
         min-height: 0;
+        gap: 1rem;
+    }
+
+    #editorDock {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    #scanPaneBox,
+    #previewPaneBox {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+    }
+
+    @media (min-width: 1024px) {
+        /* body 原本只有 min-height:100vh（沒有上限），flex 子層的 flex:1/min-height:0
+           因此永遠拿不到「有界」的可用高度，內容多高 body 就跟著撐多高，導致 dock 內
+           三個面板的 overflow-y:auto 完全不會啟動，變成整頁捲動。這裡把 body 高度鎖在
+           視窗高度，讓 flex 收縮鏈才真的有效，dock 面板才會各自捲動而不是撐開整頁。 */
+        body {
+            height: 100vh;
+        }
+
+        .editor-shell {
+            flex-direction: row;
+        }
+
+        #scanPaneBox {
+            min-width: 0;
+        }
+
+        #editorDock {
+            flex: 0 0 var(--pitrace-dock-width);
+            width: var(--pitrace-dock-width);
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        #previewPaneBox {
+            flex: 0 0 auto;
+        }
+
+        #previewPaneBox .pane-canvas-wrap {
+            flex: none;
+            min-height: 0;
+            height: 220px;
+        }
+
+        /* pieceListBox 自己要是 flex column，#pieceList 的 flex:1/min-height:0 才有依據可縮，
+           否則 max-height:30vh 只是上限、不會跟著被壓縮的父層一起收，內容會直接溢出蓋到下方的
+           propertiesPanel。 */
+        #pieceListBox {
+            flex: 0 1 auto;
+            min-height: 140px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        #pieceList {
+            flex: 1 1 auto;
+            min-height: 0;
+            max-height: 30vh;
+            overflow-y: auto;
+            display: grid;
+            align-content: start;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        }
+
+        #pieceList .piece-thumb {
+            width: auto;
+        }
+
+        #propertiesPanel {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+        }
     }
 
     /* 無障礙：只在鍵盤聚焦時顯示的跳轉連結 */
@@ -192,9 +271,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
        其餘區塊（專案列、預覽欄、物件清單、屬性面板）暫時隱藏，避免鍵盤 Tab 誤入不可見控制項。 */
     #main-content.is-focus-mode #projectToolbar,
     #main-content.is-focus-mode > .ts-divider,
-    #main-content.is-focus-mode #previewPaneColumn,
-    #main-content.is-focus-mode #pieceListBox,
-    #main-content.is-focus-mode #propertiesPanel {
+    #main-content.is-focus-mode #editorDock {
         display: none !important;
     }
 
@@ -500,37 +577,35 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                     </div>
                 </div>
 
-                <!-- 雙視窗編輯區 -->
-                <div class="ts-grid pane-row">
-                    <div class="column desktop-:is-16-wide desktop+:is-9-wide">
-                        <div class="ts-box is-raised" id="scanPaneBox">
-                            <div class="pane-card-header">
-                                <span class="pane-card-header-title">
-                                    <span class="ts-icon is-image-icon" aria-hidden="true"></span>
-                                    <span>工作區</span>
-                                </span>
-                                <button id="btnFocusMode" class="ts-button is-icon is-small is-outlined" aria-label="切換全螢幕工作區"
-                                    title="切換全螢幕工作區" aria-pressed="false">
-                                    <span class="ts-icon is-expand-icon" aria-hidden="true"></span>
-                                </button>
+                <!-- 編輯器主體：中央畫布 + 右側資訊 dock（桌面以上固定側欄；平板/手機退回堆疊） -->
+                <div class="editor-shell" id="editorShell">
+                    <div class="ts-box is-raised" id="scanPaneBox">
+                        <div class="pane-card-header">
+                            <span class="pane-card-header-title">
+                                <span class="ts-icon is-image-icon" aria-hidden="true"></span>
+                                <span>工作區</span>
+                            </span>
+                            <button id="btnFocusMode" class="ts-button is-icon is-small is-outlined" aria-label="切換全螢幕工作區"
+                                title="切換全螢幕工作區" aria-pressed="false">
+                                <span class="ts-icon is-expand-icon" aria-hidden="true"></span>
+                            </button>
+                        </div>
+                        <div class="pane-canvas-wrap">
+                            <canvas id="scanCanvas" tabindex="0" aria-label="工作區畫布，方向鍵平移、+/− 縮放、0 符合視窗"></canvas>
+                            <div class="pane-empty-state" id="scanEmptyState">
+                                <span class="ts-icon is-images-icon is-heading" aria-hidden="true"></span>
+                                <div class="ts-text is-description">還沒有匯入圖片</div>
+                                <div class="ts-text is-description">點擊上方「匯入圖片」，或將圖片檔案拖曳到此區域</div>
                             </div>
-                            <div class="pane-canvas-wrap">
-                                <canvas id="scanCanvas" tabindex="0" aria-label="工作區畫布，方向鍵平移、+/− 縮放、0 符合視窗"></canvas>
-                                <div class="pane-empty-state" id="scanEmptyState">
-                                    <span class="ts-icon is-images-icon is-heading" aria-hidden="true"></span>
-                                    <div class="ts-text is-description">還沒有匯入圖片</div>
-                                    <div class="ts-text is-description">點擊上方「匯入圖片」，或將圖片檔案拖曳到此區域</div>
-                                </div>
-                                <div class="pane-loading-state" id="scanLoadingState" style="display:none">
-                                    <span class="ts-loading is-centered" aria-hidden="true"></span>
-                                    <div class="ts-text is-description">圖片載入中…</div>
-                                </div>
+                            <div class="pane-loading-state" id="scanLoadingState" style="display:none">
+                                <span class="ts-loading is-centered" aria-hidden="true"></span>
+                                <div class="ts-text is-description">圖片載入中…</div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="column desktop-:is-16-wide desktop+:is-7-wide" id="previewPaneColumn">
-                        <div class="ts-box is-raised">
+                    <aside class="editor-dock" id="editorDock" aria-label="物件預覽與設定">
+                        <div class="ts-box is-raised" id="previewPaneBox">
                             <div class="pane-card-header">
                                 <span class="pane-card-header-title">
                                     <span class="ts-icon is-wand-magic-sparkles-icon" aria-hidden="true"></span>
@@ -549,39 +624,37 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </div>
 
-                <!-- 物件縮圖清單 -->
-                <div class="ts-box is-raised has-top-spaced" id="pieceListBox">
-                    <div class="ts-content is-padded is-dense">
-                        <div class="ts-grid is-middle-aligned mobile:is-stacked">
-                            <div class="column is-fluid">
-                                <div class="ts-header is-start-icon">
-                                    <span class="ts-icon is-layer-group-icon" aria-hidden="true"></span>
-                                    物件清單
+                        <!-- 物件縮圖清單 -->
+                        <div class="ts-box is-raised" id="pieceListBox">
+                            <div class="ts-content is-padded is-dense">
+                                <div class="ts-grid is-middle-aligned mobile:is-stacked">
+                                    <div class="column is-fluid">
+                                        <div class="ts-header is-start-icon">
+                                            <span class="ts-icon is-layer-group-icon" aria-hidden="true"></span>
+                                            物件清單
+                                        </div>
+                                    </div>
+                                    <div class="column mobile:has-top-spaced-small">
+                                        <button id="btnAddPiece" class="ts-button is-small is-outlined is-start-icon">
+                                            <span class="ts-icon is-plus-icon" aria-hidden="true"></span>
+                                            新增物件
+                                        </button>
+                                        <button id="btnDeletePiece" class="ts-button is-small is-outlined is-negative is-start-icon">
+                                            <span class="ts-icon is-trash-icon" aria-hidden="true"></span>
+                                            刪除物件
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="column mobile:has-top-spaced-small">
-                                <button id="btnAddPiece" class="ts-button is-small is-outlined is-start-icon">
-                                    <span class="ts-icon is-plus-icon" aria-hidden="true"></span>
-                                    新增物件
-                                </button>
-                                <button id="btnDeletePiece" class="ts-button is-small is-outlined is-negative is-start-icon">
-                                    <span class="ts-icon is-trash-icon" aria-hidden="true"></span>
-                                    刪除物件
-                                </button>
+                            <div class="piece-thumb-strip" id="pieceList" role="list" aria-label="物件清單">
+                                <!-- 動態生成 -->
                             </div>
                         </div>
-                    </div>
-                    <div class="piece-thumb-strip" id="pieceList" role="list" aria-label="物件清單">
-                        <!-- 動態生成 -->
-                    </div>
-                </div>
 
-                <!-- 屬性面板 -->
-                <div class="ts-box is-raised has-top-spaced" id="propertiesPanel">
-                    <div class="ts-content is-padded">
+                        <!-- 屬性面板 -->
+                        <div class="ts-box is-raised" id="propertiesPanel">
+                            <div class="ts-content is-padded">
                         <div class="ts-header is-start-icon">
                             <span class="ts-icon is-sliders-icon" aria-hidden="true"></span>
                             物件設定
@@ -698,7 +771,9 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                 </div>
                             </div>
                         </div>
-                    </div>
+                        </div>
+                        </div>
+                    </aside>
                 </div>
 
             </main>
