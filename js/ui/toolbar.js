@@ -138,7 +138,7 @@ function wireProjectToolbar(statusEl) {
 
     el('btnNewProject').addEventListener('click', () => {
         const hasContent = store.project.scans.length > 0 || store.project.pieces.length > 0;
-        if (hasContent && !window.confirm('目前的專案尚未儲存，確定要新增專案並捨棄目前內容？')) return;
+        if (hasContent && !window.confirm('目前的專案尚未匯出，確定要新增專案並捨棄目前內容？')) return;
         store.setProject(createEmptyProject());
         projectNameInput.value = '未命名專案';
         announce(statusEl, '已新增專案');
@@ -162,12 +162,22 @@ function wireProjectToolbar(statusEl) {
         }
     });
 
-    el('btnSaveProject').addEventListener('click', () => {
+    const btnSaveProject = el('btnSaveProject');
+    btnSaveProject.addEventListener('click', () => {
         const bytes = serializeProject(store.project);
         const blob = new Blob([bytes], { type: 'application/zip' });
         downloadBlob(blob, `${store.project.name || 'pitrace-project'}.pitra`);
-        announce(statusEl, '已儲存 .pitra 專案檔');
+        announce(statusEl, '已匯出 .pitra 專案檔');
     });
+
+    // 空專案（尚未匯入圖片、也沒有任何物件）沒有內容可匯出，停用避免產生空白 .pitra 檔。
+    function syncSaveProjectEnabled() {
+        const hasContent = store.project.scans.length > 0 || store.project.pieces.length > 0;
+        btnSaveProject.disabled = !hasContent;
+    }
+    store.addEventListener('project-changed', syncSaveProjectEnabled);
+    store.addEventListener('scan-changed', syncSaveProjectEnabled);
+    syncSaveProjectEnabled();
 
     const fileImportImage = el('fileImportImage');
     const btnImportImage = el('btnImportImage');
@@ -485,10 +495,10 @@ function wirePropertiesPanel(statusEl) {
             btnExportPNG.disabled = false;
             btnExportPNG.classList.remove('is-loading');
         }
-        if (!blob) return announce(statusEl, '尚未設定選取範圍，無法輸出');
+        if (!blob) return announce(statusEl, '尚未設定選取範圍，無法匯出');
         const filename = `${(el('exportFileName').value || piece.name || 'piece').trim()}.png`;
         downloadBlob(blob, filename);
-        announce(statusEl, `已輸出 ${filename}`);
+        announce(statusEl, `已匯出 ${filename}`);
     });
 }
 

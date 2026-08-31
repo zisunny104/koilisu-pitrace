@@ -159,6 +159,14 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         flex-wrap: wrap;
     }
 
+    /* 「匯入圖片」跟「專案」選單語意上是兩件事（前者匯入照片、後者管理整個專案檔），
+       特意不用 .ts-buttons 黏在一起，避免看起來像同一顆按鈕的展開選單。 */
+    .pane-toolbar-buttons {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
     /* Tocas 的 .ts-selection 用 display:none 藏原生 radio、且完全沒有 focus-visible 樣式，
        導致鍵盤使用者連 Tab 進工具選取群組都做不到。改用可視覺隱藏但仍可聚焦的手法，
        並補上 focus-visible 外框，讓原生 radiogroup 方向鍵切換恢復作用。 */
@@ -323,7 +331,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                             style="font-size:0.875rem;color:var(--ts-gray-500);font-weight:normal;margin-left:0.5rem;">v<?= htmlspecialchars($appVersion) ?></span>
                     </div>
                     <div class="ts-text is-secondary">
-                        匯入圖片，去背、校正、輸出透明 PNG，全程本機處理不上傳。
+                        匯入圖片，去背、校正、匯出透明 PNG，全程本機處理不上傳。
                     </div>
                 </div>
                 <div class="column mobile:has-hidden tablet:has-hidden desktop:has-hidden">
@@ -347,13 +355,13 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                             </div>
                         </div>
                         <div class="column">
-                            <div class="ts-buttons">
+                            <div class="pane-toolbar-buttons">
                                 <button id="btnImportImage" class="ts-button is-primary is-start-icon">
                                     <span class="ts-icon is-upload-icon" aria-hidden="true"></span>
                                     匯入圖片
                                 </button>
-                                <button class="ts-button is-primary is-icon" data-dropdown="projectMenuDropdown"
-                                    aria-label="更多專案操作" title="更多專案操作">
+                                <button class="ts-button is-outlined is-end-icon" data-dropdown="projectMenuDropdown">
+                                    專案
                                     <span class="ts-icon is-chevron-down-icon" aria-hidden="true"></span>
                                 </button>
                             </div>
@@ -379,8 +387,8 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                     </button>
                     <div class="divider"></div>
                     <button id="btnSaveProject" class="item">
-                        <span class="ts-icon is-floppy-disk-icon" aria-hidden="true"></span>
-                        儲存專案
+                        <span class="ts-icon is-download-icon" aria-hidden="true"></span>
+                        匯出專案
                     </button>
                 </div>
 
@@ -640,13 +648,13 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                             <div class="ts-grid is-middle-aligned">
                                 <div class="column is-fluid">
                                     <div class="ts-input is-fluid">
-                                        <input type="text" id="exportFileName" placeholder="輸出檔名（不含副檔名）" aria-label="輸出檔名">
+                                        <input type="text" id="exportFileName" placeholder="匯出檔名（不含副檔名）" aria-label="匯出檔名">
                                     </div>
                                 </div>
                                 <div class="column">
                                     <button id="btnExportPNG" class="ts-button is-positive is-start-icon">
                                         <span class="ts-icon is-download-icon" aria-hidden="true"></span>
-                                        輸出 PNG
+                                        匯出 PNG
                                     </button>
                                 </div>
                             </div>
