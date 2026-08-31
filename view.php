@@ -518,14 +518,14 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                 <!-- 物件縮圖清單 -->
                 <div class="ts-box is-raised has-top-spaced" id="pieceListBox">
                     <div class="ts-content is-padded is-dense">
-                        <div class="ts-grid is-middle-aligned">
+                        <div class="ts-grid is-middle-aligned mobile:is-stacked">
                             <div class="column is-fluid">
                                 <div class="ts-header is-start-icon">
                                     <span class="ts-icon is-layer-group-icon" aria-hidden="true"></span>
                                     物件清單
                                 </div>
                             </div>
-                            <div class="column">
+                            <div class="column mobile:has-top-spaced-small">
                                 <button id="btnAddPiece" class="ts-button is-small is-outlined is-start-icon">
                                     <span class="ts-icon is-plus-icon" aria-hidden="true"></span>
                                     新增物件
