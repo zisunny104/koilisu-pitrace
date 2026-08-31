@@ -1,4 +1,16 @@
-// 共用無障礙輔助：aria-live 狀態宣告、工具列方向鍵巡覽（roving tabindex，依 WAI-ARIA APG）。
+// 共用無障礙輔助：aria-live 狀態宣告（含可視化簡短通知）、工具列方向鍵巡覽（roving tabindex，依 WAI-ARIA APG）。
+
+let snackbarEl = null;
+let snackbarTimer = null;
+
+function ensureSnackbar() {
+    if (snackbarEl) return snackbarEl;
+    snackbarEl = document.createElement('div');
+    snackbarEl.className = 'ts-snackbar pitrace-snackbar';
+    snackbarEl.innerHTML = '<div class="content"></div>';
+    document.body.appendChild(snackbarEl);
+    return snackbarEl;
+}
 
 export function announce(el, msg) {
     if (!el) return;
@@ -6,6 +18,13 @@ export function announce(el, msg) {
     requestAnimationFrame(() => {
         el.textContent = msg;
     });
+
+    if (!msg) return;
+    const bar = ensureSnackbar();
+    bar.querySelector('.content').textContent = msg;
+    bar.classList.add('is-shown');
+    clearTimeout(snackbarTimer);
+    snackbarTimer = setTimeout(() => bar.classList.remove('is-shown'), 3000);
 }
 
 function isFocusableLeaf(el) {
@@ -18,9 +37,12 @@ function isFocusableLeaf(el) {
     return el.hasAttribute('tabindex');
 }
 
-function collectItems(el, items) {
+function collectItems(el, items, focusTarget) {
     if (el.getAttribute?.('role') === 'radiogroup') {
-        const checked = el.querySelector('input[type="radio"]:checked') || el.querySelector('input[type="radio"]');
+        // 點擊/label 觸發的 focusin 會在瀏覽器更新 :checked 之前先送出，
+        // 這裡優先採用實際取得焦點的 radio，避免讀到切換前的舊選取狀態。
+        const focused = focusTarget && el.contains(focusTarget) ? focusTarget : null;
+        const checked = focused || el.querySelector('input[type="radio"]:checked') || el.querySelector('input[type="radio"]');
         if (checked) items.push(checked);
         return;
     }
@@ -28,7 +50,7 @@ function collectItems(el, items) {
         items.push(el);
         return;
     }
-    for (const child of el.children) collectItems(child, items);
+    for (const child of el.children) collectItems(child, items, focusTarget);
 }
 
 /**
@@ -39,9 +61,9 @@ function collectItems(el, items) {
 export function makeToolbarArrowNav(toolbarEl) {
     if (!toolbarEl) return;
 
-    const getItems = () => {
+    const getItems = (focusTarget) => {
         const items = [];
-        for (const child of toolbarEl.children) collectItems(child, items);
+        for (const child of toolbarEl.children) collectItems(child, items, focusTarget);
         return items;
     };
 
@@ -50,7 +72,7 @@ export function makeToolbarArrowNav(toolbarEl) {
     });
 
     toolbarEl.addEventListener('focusin', (evt) => {
-        getItems().forEach((el) => {
+        getItems(evt.target).forEach((el) => {
             el.tabIndex = el === evt.target || el.contains?.(evt.target) ? 0 : -1;
         });
     });
@@ -59,7 +81,7 @@ export function makeToolbarArrowNav(toolbarEl) {
         if (!['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'Home', 'End'].includes(evt.key)) return;
         const inRadiogroup = evt.target.closest('[role="radiogroup"]');
         if (inRadiogroup && evt.key !== 'Home' && evt.key !== 'End') return;
-        const items = getItems();
+        const items = getItems(evt.target);
         const currentIndex = items.indexOf(document.activeElement);
         if (currentIndex === -1) return;
 

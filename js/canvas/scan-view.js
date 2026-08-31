@@ -5,6 +5,7 @@ import { store } from '../state.js';
 import { RectSelectTool } from '../tools/rect-select.js';
 import { LassoTool } from '../tools/lasso.js';
 import { EyedropperTool } from '../processing/bg-remove.js';
+import { announce } from '../a11y.js';
 
 class PanTool {
     onPointerDown(imgPt, evt, view) {
@@ -73,11 +74,7 @@ export class ScanView {
     }
 
     announce(msg) {
-        if (!this.statusEl) return;
-        this.statusEl.textContent = '';
-        requestAnimationFrame(() => {
-            this.statusEl.textContent = msg;
-        });
+        announce(this.statusEl, msg);
     }
 
     _currentTool() {

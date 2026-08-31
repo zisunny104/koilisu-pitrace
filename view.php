@@ -289,8 +289,13 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         gap: 0.6rem;
     }
 
-    .range-row input[type="range"] {
+    .range-row .ts-range {
         flex: 1;
+    }
+
+    .range-row .ts-input {
+        width: 4.5rem;
+        flex: none;
     }
 
     .rgb-inputs {
@@ -304,6 +309,25 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
 
     #statusRegion {
         min-height: 1.2em;
+    }
+
+    /* Tocas 的 ts-snackbar 只提供膠囊樣式，定位／淡入淡出／自動消失都需要自己接上，
+       這裡讓它固定在畫面下方置中，作為 announce() 狀態訊息的可視化版本。 */
+    .pitrace-snackbar {
+        position: fixed;
+        left: 50%;
+        bottom: 1.5rem;
+        transform: translate(-50%, 0.5rem);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease, transform 0.2s ease;
+        z-index: 1000;
+        max-width: calc(100vw - 2rem);
+    }
+
+    .pitrace-snackbar.is-shown {
+        opacity: 1;
+        transform: translate(-50%, 0);
     }
 
     /* Tocas 沒有拖放區元件，這裡用最小自訂樣式做拖曳匯入圖片時的視覺回饋。 */
@@ -631,16 +655,18 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                             </div>
 
                             <div class="has-top-spaced">
-                                <label class="ts-text is-label" for="bgThreshold">顏色距離門檻：<output id="bgThresholdValue">40</output></label>
+                                <label class="ts-text is-label" for="bgThreshold">顏色距離門檻</label>
                                 <div class="range-row">
-                                    <input type="range" id="bgThreshold" min="0" max="255" value="40">
+                                    <div class="ts-range"><input type="range" id="bgThreshold" min="0" max="255" value="40"></div>
+                                    <div class="ts-input"><input type="number" id="bgThresholdValue" min="0" max="255" value="40" aria-label="顏色距離門檻數值"></div>
                                 </div>
                             </div>
 
                             <div class="has-top-spaced-small">
-                                <label class="ts-text is-label" for="bgSoftness">邊緣柔化：<output id="bgSoftnessValue">24</output></label>
+                                <label class="ts-text is-label" for="bgSoftness">邊緣柔化</label>
                                 <div class="range-row">
-                                    <input type="range" id="bgSoftness" min="1" max="120" value="24">
+                                    <div class="ts-range"><input type="range" id="bgSoftness" min="1" max="120" value="24"></div>
+                                    <div class="ts-input"><input type="number" id="bgSoftnessValue" min="1" max="120" value="24" aria-label="邊緣柔化數值"></div>
                                 </div>
                             </div>
 

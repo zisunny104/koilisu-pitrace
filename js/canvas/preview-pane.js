@@ -6,6 +6,7 @@
 import { store } from '../state.js';
 import { selectionBounds } from '../tools/transform.js';
 import { estimateAlpha } from '../processing/bg-remove.js';
+import { announce } from '../a11y.js';
 
 const maxPreviewDim = 1400;
 
@@ -110,7 +111,7 @@ export class PreviewPane {
     }
 
     announce(msg) {
-        if (this.statusEl) this.statusEl.textContent = msg;
+        announce(this.statusEl, msg);
     }
 
     async refresh() {

@@ -12,6 +12,35 @@ function el(id) {
     return document.getElementById(id);
 }
 
+// 讓 range 滑桿與旁邊的數字輸入框互相同步：拖曳滑桿即時反映到數字框，
+// 放開/變更才寫回 store；打數字框則反過來即時同步滑桿，blur/Enter 時夾在 min~max 內寫回 store。
+function bindRangeNumberPair(rangeId, numberId, apply) {
+    const range = el(rangeId);
+    const number = el(numberId);
+    const min = Number(range.min);
+    const max = Number(range.max);
+
+    range.addEventListener('input', () => {
+        number.value = range.value;
+    });
+    range.addEventListener('change', () => apply(Number(range.value)));
+
+    number.addEventListener('input', () => {
+        const n = Number(number.value);
+        if (number.value !== '' && !Number.isNaN(n) && n >= min && n <= max) {
+            range.value = String(n);
+        }
+    });
+    number.addEventListener('change', () => {
+        let n = Number(number.value);
+        if (Number.isNaN(n)) n = Number(range.value);
+        n = Math.min(max, Math.max(min, n));
+        number.value = String(n);
+        range.value = String(n);
+        apply(n);
+    });
+}
+
 function downloadBlob(blob, filename) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -464,22 +493,16 @@ function wirePropertiesPanel(statusEl) {
         announce(statusEl, `已自動取樣背景色 RGB ${color.r}, ${color.g}, ${color.b}`);
     });
 
-    el('bgThreshold').addEventListener('input', () => {
-        el('bgThresholdValue').textContent = el('bgThreshold').value;
-    });
-    el('bgThreshold').addEventListener('change', () => {
+    bindRangeNumberPair('bgThreshold', 'bgThresholdValue', (n) => {
         const piece = store.getActivePiece();
         if (!piece) return;
-        store.updatePiece(piece.id, { bgRemoval: { ...piece.bgRemoval, threshold: Number(el('bgThreshold').value) } });
+        store.updatePiece(piece.id, { bgRemoval: { ...piece.bgRemoval, threshold: n } });
     });
 
-    el('bgSoftness').addEventListener('input', () => {
-        el('bgSoftnessValue').textContent = el('bgSoftness').value;
-    });
-    el('bgSoftness').addEventListener('change', () => {
+    bindRangeNumberPair('bgSoftness', 'bgSoftnessValue', (n) => {
         const piece = store.getActivePiece();
         if (!piece) return;
-        store.updatePiece(piece.id, { bgRemoval: { ...piece.bgRemoval, softness: Number(el('bgSoftness').value) } });
+        store.updatePiece(piece.id, { bgRemoval: { ...piece.bgRemoval, softness: n } });
     });
 
     el('btnExportPNG').addEventListener('click', async () => {
@@ -594,8 +617,8 @@ function syncPropertiesPanel(statusEl) {
     el('bgSampleG').value = piece.bgRemoval.sampleColor.g;
     el('bgSampleB').value = piece.bgRemoval.sampleColor.b;
     el('bgThreshold').value = piece.bgRemoval.threshold;
-    el('bgThresholdValue').textContent = piece.bgRemoval.threshold;
+    el('bgThresholdValue').value = piece.bgRemoval.threshold;
     el('bgSoftness').value = piece.bgRemoval.softness;
-    el('bgSoftnessValue').textContent = piece.bgRemoval.softness;
+    el('bgSoftnessValue').value = piece.bgRemoval.softness;
     el('exportFileName').value = el('exportFileName').value || piece.name;
 }
