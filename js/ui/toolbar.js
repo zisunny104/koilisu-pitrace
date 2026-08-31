@@ -23,11 +23,67 @@ function downloadBlob(blob, filename) {
     URL.revokeObjectURL(url);
 }
 
+async function importImageFiles(files, statusEl) {
+    const imageFiles = files.filter((file) => file.type.startsWith('image/'));
+    for (const file of imageFiles) {
+        const buf = await file.arrayBuffer();
+        const bitmap = await createImageBitmap(new Blob([buf], { type: file.type }));
+        const { width, height } = bitmap;
+        bitmap.close();
+        await store.addScan({ filename: file.name, mime: file.type, bytes: buf, width, height });
+    }
+    if (imageFiles.length) announce(statusEl, `已匯入 ${imageFiles.length} 張圖片`);
+    else if (files.length) announce(statusEl, '未找到可匯入的圖片檔案');
+    return imageFiles.length;
+}
+
+function wireDragDropImport(statusEl) {
+    const target = document.getElementById('main-content');
+    if (!target) return;
+
+    function hasFiles(evt) {
+        return Array.from(evt.dataTransfer?.types || []).includes('Files');
+    }
+
+    // 防止瀏覽器預設把拖入的檔案直接開啟導覽走，即使沒有落在拖放區內也要攔截。
+    window.addEventListener('dragover', (evt) => {
+        if (hasFiles(evt)) evt.preventDefault();
+    });
+    window.addEventListener('drop', (evt) => {
+        if (hasFiles(evt)) evt.preventDefault();
+    });
+
+    let dragDepth = 0;
+    target.addEventListener('dragenter', (evt) => {
+        if (!hasFiles(evt)) return;
+        evt.preventDefault();
+        dragDepth += 1;
+        target.classList.add('is-drag-target');
+    });
+    target.addEventListener('dragover', (evt) => {
+        if (!hasFiles(evt)) return;
+        evt.preventDefault();
+    });
+    target.addEventListener('dragleave', () => {
+        dragDepth = Math.max(0, dragDepth - 1);
+        if (dragDepth === 0) target.classList.remove('is-drag-target');
+    });
+    target.addEventListener('drop', async (evt) => {
+        if (!hasFiles(evt)) return;
+        evt.preventDefault();
+        dragDepth = 0;
+        target.classList.remove('is-drag-target');
+        const files = Array.from(evt.dataTransfer?.files || []);
+        if (files.length) await importImageFiles(files, statusEl);
+    });
+}
+
 export function wireUI({ scanView, statusEl }) {
     wireProjectToolbar(statusEl);
     wireMainToolbar(scanView, statusEl);
     wirePieceList(statusEl);
     wirePropertiesPanel(statusEl);
+    wireDragDropImport(statusEl);
 
     store.addEventListener('active-piece-changed', () => syncPropertiesPanel(statusEl));
     store.addEventListener('piece-changed', () => syncPropertiesPanel(statusEl));
@@ -100,14 +156,7 @@ function wireProjectToolbar(statusEl) {
     fileImportImage.addEventListener('change', async (evt) => {
         const files = Array.from(evt.target.files || []);
         evt.target.value = '';
-        for (const file of files) {
-            const buf = await file.arrayBuffer();
-            const bitmap = await createImageBitmap(new Blob([buf], { type: file.type }));
-            const { width, height } = bitmap;
-            bitmap.close();
-            await store.addScan({ filename: file.name, mime: file.type, bytes: buf, width, height });
-        }
-        if (files.length) announce(statusEl, `已匯入 ${files.length} 張圖片`);
+        if (files.length) await importImageFiles(files, statusEl);
     });
 }
 
@@ -141,11 +190,27 @@ function wireMainToolbar(scanView, statusEl) {
         if (!piece) return announce(statusEl, '請先選取作品');
         rotatePieceBy(piece.id, 90);
     });
+    const syncRotateButtons = () => {
+        const hasPiece = !!store.getActivePiece();
+        el('btnRotateLeft').disabled = !hasPiece;
+        el('btnRotateRight').disabled = !hasPiece;
+    };
+    store.addEventListener('active-piece-changed', syncRotateButtons);
+    syncRotateButtons();
 
-    wireZoomControl(scanView);
+    const zoomControl = wireZoomControl(scanView);
     el('btnZoomOut').addEventListener('click', () => scanView.zoomBy(1 / 1.2));
     el('btnZoomIn').addEventListener('click', () => scanView.zoomBy(1.2));
     el('btnZoomFit').addEventListener('click', () => scanView.fitToView());
+    const syncCanvasControls = () => {
+        const hasScan = !!store.getActiveScan();
+        el('btnZoomOut').disabled = !hasScan;
+        el('btnZoomIn').disabled = !hasScan;
+        el('btnZoomFit').disabled = !hasScan;
+        zoomControl.setEnabled(hasScan);
+    };
+    store.addEventListener('scan-changed', syncCanvasControls);
+    syncCanvasControls();
 
     wireFullscreenToggle();
 }
@@ -154,6 +219,7 @@ function wireZoomControl(scanView) {
     const zoomDisplay = el('zoomDisplay');
     const zoomInput = el('zoomInput');
     let applying = false;
+    let enabled = false;
 
     scanView.onZoomChange = (scale) => {
         const pct = Math.round(scale * 100);
@@ -161,7 +227,18 @@ function wireZoomControl(scanView) {
         zoomDisplay.setAttribute('aria-label', `目前縮放 ${pct}%，按 Enter 可輸入數值`);
     };
 
+    function setEnabled(next) {
+        enabled = next;
+        zoomDisplay.classList.toggle('is-disabled', !enabled);
+        zoomDisplay.setAttribute('aria-disabled', String(!enabled));
+        if (enabled) zoomDisplay.setAttribute('tabindex', '0');
+        else zoomDisplay.removeAttribute('tabindex');
+        zoomInput.disabled = !enabled;
+    }
+    setEnabled(false);
+
     function enterEdit() {
+        if (!enabled) return;
         zoomInput.value = zoomDisplay.textContent.replace('%', '');
         zoomDisplay.style.display = 'none';
         zoomInput.style.display = '';
@@ -198,6 +275,8 @@ function wireZoomControl(scanView) {
         }
     });
     zoomInput.addEventListener('blur', () => exitEdit(true));
+
+    return { setEnabled };
 }
 
 function wireFullscreenToggle() {

@@ -142,6 +142,7 @@ export class ScanView {
 
     _onWheel(evt) {
         evt.preventDefault();
+        if (!this.bitmap) return;
         const rect = this.canvas.getBoundingClientRect();
         const center = { x: evt.clientX - rect.left, y: evt.clientY - rect.top };
         this.zoomBy(evt.deltaY < 0 ? 1.1 : 1 / 1.1, center);
@@ -174,6 +175,7 @@ export class ScanView {
             this._currentTool()?.onCancel?.(this);
             return;
         }
+        if (!this.bitmap) return;
         this._currentTool()?.onKeyDown?.(evt, this);
 
         const step = evt.shiftKey ? 40 : 10;

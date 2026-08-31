@@ -206,6 +206,14 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
     #statusRegion {
         min-height: 1.2em;
     }
+
+    /* Tocas 沒有拖放區元件，這裡用最小自訂樣式做拖曳匯入圖片時的視覺回饋。 */
+    #main-content.is-drag-target {
+        outline: 3px dashed var(--ts-primary-500, #3b82f6);
+        outline-offset: -3px;
+        border-radius: 8px;
+        background: var(--ts-primary-50, rgba(59, 130, 246, 0.06));
+    }
     </style>
 </head>
 
@@ -365,7 +373,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                 <div class="pane-empty-state" id="scanEmptyState">
                                     <span class="ts-icon is-images-icon is-heading" aria-hidden="true"></span>
                                     <div class="ts-text is-description">還沒有匯入掃描圖片</div>
-                                    <div class="ts-text is-description">點擊上方「匯入圖片」開始</div>
+                                    <div class="ts-text is-description">點擊上方「匯入圖片」，或將圖片檔案拖曳到此區域</div>
                                 </div>
                             </div>
                         </div>
