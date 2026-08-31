@@ -30,14 +30,17 @@ export class ThumbnailStrip {
             btn.type = 'button';
             btn.className = 'piece-thumb';
             btn.setAttribute('aria-current', piece.id === store.activePieceId ? 'true' : 'false');
-            btn.setAttribute('aria-label', `作品：${piece.name}`);
+            btn.setAttribute('aria-label', `物件：${piece.name}`);
             btn.addEventListener('click', () => {
                 store.setActivePiece(piece.id);
-                announce(this.statusEl, `已選取作品 ${piece.name}`);
+                announce(this.statusEl, `已選取物件 ${piece.name}`);
             });
 
             const placeholder = document.createElement('div');
             placeholder.className = 'thumb-placeholder';
+            const spinner = document.createElement('div');
+            spinner.className = 'ts-loading is-small is-centered';
+            placeholder.appendChild(spinner);
             btn.appendChild(placeholder);
 
             const label = document.createElement('span');
@@ -49,7 +52,11 @@ export class ThumbnailStrip {
             this.listEl.appendChild(item);
 
             renderPiece(piece, { maxDim: thumbMaxDim }).then((rendered) => {
-                if (!rendered || !placeholder.isConnected) return;
+                if (!placeholder.isConnected) return;
+                if (!rendered) {
+                    spinner.remove();
+                    return;
+                }
                 const canvas = document.createElement('canvas');
                 canvas.width = rendered.width;
                 canvas.height = rendered.height;

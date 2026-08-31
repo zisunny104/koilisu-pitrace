@@ -78,7 +78,7 @@ export function parseProjectZip(bytes) {
     const pieces = manifest.pieceOrder.map((id) => {
         const data = files.get(`pieces/${id}.json`);
         if (!data) {
-            throw new Error(`遺失作品資料：${id}`);
+            throw new Error(`遺失物件資料：${id}`);
         }
         return JSON.parse(decoder.decode(data));
     });

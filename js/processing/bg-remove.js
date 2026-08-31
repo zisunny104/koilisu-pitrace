@@ -78,7 +78,7 @@ export function sampleBorderColor(imageData) {
 export class EyedropperTool {
     async onPointerDown(imgPt, evt, view) {
         const piece = store.getActivePiece();
-        if (!piece) return;
+        if (!piece) return view.announce('請先選取物件');
         const bitmap = await store.getScanBitmap(piece.scanId);
         if (!bitmap) return;
         const x = Math.round(imgPt.x);

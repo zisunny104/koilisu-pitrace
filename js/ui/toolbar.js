@@ -84,10 +84,27 @@ export function wireUI({ scanView, statusEl }) {
     wirePieceList(statusEl);
     wirePropertiesPanel(statusEl);
     wireDragDropImport(statusEl);
+    wireBelowFoldVisibility();
 
     store.addEventListener('active-piece-changed', () => syncPropertiesPanel(statusEl));
     store.addEventListener('piece-changed', () => syncPropertiesPanel(statusEl));
     syncPropertiesPanel(statusEl);
+}
+
+// 物件清單／屬性面板在還沒有任何圖片可用時沒有意義（新增物件、框選都無從做起），先隱藏以減少畫面雜訊。
+function wireBelowFoldVisibility() {
+    const pieceListBox = el('pieceListBox');
+    const propertiesPanel = el('propertiesPanel');
+
+    function sync() {
+        const hasScan = store.project.scans.length > 0;
+        pieceListBox.style.display = hasScan ? '' : 'none';
+        propertiesPanel.style.display = hasScan ? '' : 'none';
+    }
+
+    store.addEventListener('project-changed', sync);
+    store.addEventListener('scan-changed', sync);
+    sync();
 }
 
 function wireProjectToolbar(statusEl) {
@@ -133,6 +150,7 @@ function wireProjectToolbar(statusEl) {
         const file = evt.target.files?.[0];
         evt.target.value = '';
         if (!file) return;
+        announce(statusEl, '開啟專案中…');
         try {
             const buf = await file.arrayBuffer();
             const project = parseProjectZip(buf);
@@ -152,11 +170,20 @@ function wireProjectToolbar(statusEl) {
     });
 
     const fileImportImage = el('fileImportImage');
-    el('btnImportImage').addEventListener('click', () => fileImportImage.click());
+    const btnImportImage = el('btnImportImage');
+    btnImportImage.addEventListener('click', () => fileImportImage.click());
     fileImportImage.addEventListener('change', async (evt) => {
         const files = Array.from(evt.target.files || []);
         evt.target.value = '';
-        if (files.length) await importImageFiles(files, statusEl);
+        if (!files.length) return;
+        btnImportImage.disabled = true;
+        btnImportImage.classList.add('is-loading');
+        try {
+            await importImageFiles(files, statusEl);
+        } finally {
+            btnImportImage.disabled = false;
+            btnImportImage.classList.remove('is-loading');
+        }
     });
 }
 
@@ -182,13 +209,15 @@ function wireMainToolbar(scanView, statusEl) {
 
     el('btnRotateLeft').addEventListener('click', () => {
         const piece = store.getActivePiece();
-        if (!piece) return announce(statusEl, '請先選取作品');
+        if (!piece) return announce(statusEl, '請先選取物件');
         rotatePieceBy(piece.id, -90);
+        announce(statusEl, `已向左旋轉，目前角度 ${piece.rotation}°`);
     });
     el('btnRotateRight').addEventListener('click', () => {
         const piece = store.getActivePiece();
-        if (!piece) return announce(statusEl, '請先選取作品');
+        if (!piece) return announce(statusEl, '請先選取物件');
         rotatePieceBy(piece.id, 90);
+        announce(statusEl, `已向右旋轉，目前角度 ${piece.rotation}°`);
     });
     const syncRotateButtons = () => {
         const hasPiece = !!store.getActivePiece();
@@ -213,6 +242,38 @@ function wireMainToolbar(scanView, statusEl) {
     syncCanvasControls();
 
     wireFullscreenToggle();
+    wireFocusMode(scanView);
+}
+
+// 左側工作區「單獨全螢幕」模式：畫布固定滿版，編輯工具列（#mainToolbar）改用 CSS 浮動於畫布上方
+// （同一個 DOM 節點，只是視覺上抽離版面，不重新建立按鈕或事件監聽）。
+function wireFocusMode(scanView) {
+    const btn = el('btnFocusMode');
+    const mainEl = document.getElementById('main-content');
+    const icon = btn.querySelector('.ts-icon');
+
+    function refit() {
+        requestAnimationFrame(() => {
+            window.dispatchEvent(new Event('resize'));
+            scanView.fitToView();
+        });
+    }
+
+    function setFocusMode(on) {
+        mainEl.classList.toggle('is-focus-mode', on);
+        btn.setAttribute('aria-pressed', String(on));
+        const label = on ? '結束全螢幕工作區' : '切換全螢幕工作區';
+        btn.setAttribute('aria-label', label);
+        btn.title = label;
+        icon.className = `ts-icon ${on ? 'is-compress-icon' : 'is-expand-icon'}`;
+        refit();
+    }
+
+    btn.addEventListener('click', () => setFocusMode(!mainEl.classList.contains('is-focus-mode')));
+
+    document.addEventListener('keydown', (evt) => {
+        if (evt.key === 'Escape' && mainEl.classList.contains('is-focus-mode')) setFocusMode(false);
+    });
 }
 
 function wireZoomControl(scanView) {
@@ -303,15 +364,15 @@ function wirePieceList(statusEl) {
     el('btnAddPiece').addEventListener('click', () => {
         if (!store.activeScanId) return announce(statusEl, '請先匯入圖片');
         store.addPiece(store.activeScanId);
-        announce(statusEl, '已新增作品，請框選範圍');
+        announce(statusEl, '已新增物件，請框選範圍');
     });
 
     el('btnDeletePiece').addEventListener('click', () => {
         const piece = store.getActivePiece();
-        if (!piece) return announce(statusEl, '請先選取作品');
-        if (!window.confirm(`確定要刪除作品「${piece.name}」？`)) return;
+        if (!piece) return announce(statusEl, '請先選取物件');
+        if (!window.confirm(`確定要刪除物件「${piece.name}」？`)) return;
         store.deletePiece(piece.id);
-        announce(statusEl, '已刪除作品');
+        announce(statusEl, '已刪除物件');
     });
 }
 
@@ -319,7 +380,7 @@ function wirePropertiesPanel(statusEl) {
     el('pieceNameInput').addEventListener('change', (evt) => {
         const piece = store.getActivePiece();
         if (!piece) return;
-        store.updatePiece(piece.id, { name: evt.target.value.trim() || '未命名作品' });
+        store.updatePiece(piece.id, { name: evt.target.value.trim() || '未命名物件' });
     });
 
     ['selX', 'selY', 'selW', 'selH'].forEach((id) => {
@@ -375,7 +436,7 @@ function wirePropertiesPanel(statusEl) {
 
     el('btnAutoSampleBg').addEventListener('click', async () => {
         const piece = store.getActivePiece();
-        if (!piece) return announce(statusEl, '請先選取作品');
+        if (!piece) return announce(statusEl, '請先選取物件');
         const bitmap = await store.getScanBitmap(piece.scanId);
         const bounds = selectionBounds(piece);
         if (!bitmap || !bounds || bounds.w <= 0 || bounds.h <= 0) {
@@ -413,8 +474,17 @@ function wirePropertiesPanel(statusEl) {
 
     el('btnExportPNG').addEventListener('click', async () => {
         const piece = store.getActivePiece();
-        if (!piece) return announce(statusEl, '請先選取作品');
-        const blob = await exportPiecePNG(piece);
+        if (!piece) return announce(statusEl, '請先選取物件');
+        const btnExportPNG = el('btnExportPNG');
+        btnExportPNG.disabled = true;
+        btnExportPNG.classList.add('is-loading');
+        let blob;
+        try {
+            blob = await exportPiecePNG(piece);
+        } finally {
+            btnExportPNG.disabled = false;
+            btnExportPNG.classList.remove('is-loading');
+        }
         if (!blob) return announce(statusEl, '尚未設定選取範圍，無法輸出');
         const filename = `${(el('exportFileName').value || piece.name || 'piece').trim()}.png`;
         downloadBlob(blob, filename);

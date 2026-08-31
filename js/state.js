@@ -21,7 +21,7 @@ export function createPiece(scanId, overrides = {}) {
     return {
         id: makeId('piece'),
         scanId,
-        name: '未命名作品',
+        name: '未命名物件',
         selection: { type: 'rect', rect: null, path: null, closed: false },
         rotation: 0,
         bgRemoval: {

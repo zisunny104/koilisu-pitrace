@@ -98,6 +98,8 @@ export class PreviewPane {
         this.ctx = canvas.getContext('2d');
         this.statusEl = statusEl;
         this.emptyStateEl = document.getElementById('previewEmptyState');
+        this.loadingStateEl = document.getElementById('previewLoadingState');
+        this._loadToken = null;
 
         store.addEventListener('active-piece-changed', () => this.refresh());
         store.addEventListener('piece-changed', () => this.refresh());
@@ -123,11 +125,23 @@ export class PreviewPane {
 
         const piece = store.getActivePiece();
         if (!piece) {
+            this._loadToken = null;
+            if (this.loadingStateEl) this.loadingStateEl.style.display = 'none';
             if (this.emptyStateEl) this.emptyStateEl.style.display = '';
             return;
         }
 
+        // 大部分更新都很快完成，延遲顯示載入中效果可避免每次微調都閃爍。
+        const token = (this._loadToken = {});
+        const showLoadingTimer = setTimeout(() => {
+            if (this._loadToken === token && this.loadingStateEl) this.loadingStateEl.style.display = '';
+        }, 150);
+
         const rendered = await renderPiece(piece, {});
+        clearTimeout(showLoadingTimer);
+        if (this._loadToken !== token) return; // 已有更新的渲染請求，捨棄過期結果
+        if (this.loadingStateEl) this.loadingStateEl.style.display = 'none';
+
         if (!rendered) {
             if (this.emptyStateEl) this.emptyStateEl.style.display = '';
             return;

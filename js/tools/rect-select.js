@@ -9,9 +9,9 @@ export class RectSelectTool {
         this.draftRect = null;
     }
 
-    onPointerDown(imgPt) {
+    onPointerDown(imgPt, evt, view) {
         const piece = store.getActivePiece();
-        if (!piece) return;
+        if (!piece) return view.announce('請先選取物件');
         this.dragStart = imgPt;
         this.draftRect = { x: imgPt.x, y: imgPt.y, w: 0, h: 0 };
     }

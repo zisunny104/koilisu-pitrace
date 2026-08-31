@@ -46,6 +46,8 @@ export class ScanView {
         this.ty = 0;
         this.bitmap = null;
         this.emptyStateEl = document.getElementById('scanEmptyState');
+        this.loadingStateEl = document.getElementById('scanLoadingState');
+        this._loadToken = null;
         this._toolInstances = {};
         this._activeToolName = store.activeTool;
         this._panStart = null;
@@ -71,7 +73,11 @@ export class ScanView {
     }
 
     announce(msg) {
-        if (this.statusEl) this.statusEl.textContent = msg;
+        if (!this.statusEl) return;
+        this.statusEl.textContent = '';
+        requestAnimationFrame(() => {
+            this.statusEl.textContent = msg;
+        });
     }
 
     _currentTool() {
@@ -85,12 +91,23 @@ export class ScanView {
     async loadActiveScan() {
         const scan = store.getActiveScan();
         if (!scan) {
+            this._loadToken = null;
             this.bitmap = null;
+            if (this.loadingStateEl) this.loadingStateEl.style.display = 'none';
             this.draw();
             return;
         }
-        this.bitmap = await store.getScanBitmap(scan.id);
-        this.fitToView();
+        const token = (this._loadToken = {});
+        if (this.loadingStateEl) this.loadingStateEl.style.display = '';
+        if (this.emptyStateEl) this.emptyStateEl.style.display = 'none';
+        try {
+            const bitmap = await store.getScanBitmap(scan.id);
+            if (this._loadToken !== token) return; // 已切換到其他掃描，捨棄過期結果
+            this.bitmap = bitmap;
+            this.fitToView();
+        } finally {
+            if (this._loadToken === token && this.loadingStateEl) this.loadingStateEl.style.display = 'none';
+        }
     }
 
     _resizeCanvas() {
@@ -234,7 +251,7 @@ export class ScanView {
             this._drawSelections(ctx);
         }
 
-        if (this.emptyStateEl) this.emptyStateEl.style.display = this.bitmap ? 'none' : '';
+        if (this.emptyStateEl) this.emptyStateEl.style.display = this.bitmap || this._loadToken ? 'none' : '';
 
         this._currentTool()?.drawOverlay?.(ctx, this);
     }

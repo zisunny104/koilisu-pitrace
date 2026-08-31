@@ -10,7 +10,7 @@ export class LassoTool {
 
     onPointerDown(imgPt, evt, view) {
         const piece = store.getActivePiece();
-        if (!piece) return;
+        if (!piece) return view.announce('請先選取物件');
         if (!this.draftPath) {
             this.draftPath = piece.selection.type === 'lasso' && piece.selection.path && !piece.selection.closed
                 ? piece.selection.path.slice()
