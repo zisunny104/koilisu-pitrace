@@ -400,23 +400,24 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                 <div class="pane-toolbar has-bottom-spaced-small" role="toolbar" aria-label="編輯工具" id="mainToolbar">
                     <div class="ts-selection is-compact" role="radiogroup" aria-label="選取工具">
                         <label class="item" title="矩形選取（M）">
-                            <input type="radio" name="tool" value="rect" id="tool-rect" checked>
+                            <input type="radio" name="tool" value="rect" id="tool-rect" checked aria-label="矩形選取">
                             <div class="text"><span class="ts-icon is-crop-simple-icon" aria-hidden="true"></span>
-                                矩形</div>
+                                <span class="mobile:has-hidden">矩形</span></div>
                         </label>
                         <label class="item" title="套索選取（L）">
-                            <input type="radio" name="tool" value="lasso" id="tool-lasso">
+                            <input type="radio" name="tool" value="lasso" id="tool-lasso" aria-label="套索選取">
                             <div class="text"><span class="ts-icon is-draw-polygon-icon" aria-hidden="true"></span>
-                                套索</div>
+                                <span class="mobile:has-hidden">套索</span></div>
                         </label>
                         <label class="item" title="平移（H）">
-                            <input type="radio" name="tool" value="pan" id="tool-pan">
-                            <div class="text"><span class="ts-icon is-hand-icon" aria-hidden="true"></span> 平移</div>
+                            <input type="radio" name="tool" value="pan" id="tool-pan" aria-label="平移">
+                            <div class="text"><span class="ts-icon is-hand-icon" aria-hidden="true"></span> <span
+                                    class="mobile:has-hidden">平移</span></div>
                         </label>
                         <label class="item" title="取樣背景色（I）">
-                            <input type="radio" name="tool" value="eyedropper" id="tool-eyedropper">
+                            <input type="radio" name="tool" value="eyedropper" id="tool-eyedropper" aria-label="取樣背景色">
                             <div class="text"><span class="ts-icon is-eye-dropper-icon" aria-hidden="true"></span>
-                                取樣背景色</div>
+                                <span class="mobile:has-hidden">取樣背景色</span></div>
                         </label>
                     </div>
 
