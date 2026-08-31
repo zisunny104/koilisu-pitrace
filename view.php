@@ -98,8 +98,8 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         align-items: center;
         justify-content: space-between;
         gap: 0.5rem;
-        min-height: 3.5rem;
-        padding: 0.6rem 1rem;
+        min-height: 2.5rem;
+        padding: 0.4rem 0.75rem;
         font-size: 0.8125rem;
         font-weight: 600;
         color: var(--ts-gray-600, #666);
@@ -509,7 +509,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                     <span class="ts-icon is-image-icon" aria-hidden="true"></span>
                                     <span>工作區</span>
                                 </span>
-                                <button id="btnFocusMode" class="ts-button is-icon is-outlined" aria-label="切換全螢幕工作區"
+                                <button id="btnFocusMode" class="ts-button is-icon is-small is-outlined" aria-label="切換全螢幕工作區"
                                     title="切換全螢幕工作區" aria-pressed="false">
                                     <span class="ts-icon is-expand-icon" aria-hidden="true"></span>
                                 </button>
