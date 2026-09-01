@@ -1,5 +1,10 @@
 // 去背景：以取樣背景色的顏色距離估算 alpha，用平滑曲線過渡（避免生硬二值化邊緣），
 // 藉此保留鉛筆／水彩等半透明筆觸，而非單純把「接近白色」的像素直接清成全透明。
+//
+// 邊緣白邊的成因：半透明的邊緣像素，其 RGB 本身就是「原稿顏色與背景色的混色」
+// （掃描器反鋸齒造成），只調 alpha、不動 RGB 的話，那圈混色像素合成到非白色底
+// 時仍會透出白色殘影。解法是「色彩去污染」：依 pixel = a·F + (1-a)·B 反推真正的
+// 前景色 F，把背景色的成分從 RGB 中減掉，而不是靠加大柔化寬度去模糊掩蓋它。
 
 import { store } from '../state.js';
 
@@ -33,15 +38,28 @@ export function estimateAlpha(imageData, sampleColor, threshold, softness) {
         let t = (dist - lo) / span;
         t = Math.max(0, Math.min(1, t));
         const smooth = t * t * (3 - 2 * t); // smoothstep
-        const alpha = Math.round(smooth * 255);
+        const alpha = Math.min(srcA, Math.round(smooth * 255));
 
-        od[i] = r;
-        od[i + 1] = g;
-        od[i + 2] = b;
-        od[i + 3] = Math.min(srcA, alpha);
+        if (alpha > 0 && alpha < 255) {
+            // 去污染：pixel = a·F + (1-a)·B → F = (pixel - (1-a)·B) / a
+            const a = alpha / 255;
+            od[i] = decontaminate(r, sr, a);
+            od[i + 1] = decontaminate(g, sg, a);
+            od[i + 2] = decontaminate(b, sb, a);
+        } else {
+            od[i] = r;
+            od[i + 1] = g;
+            od[i + 2] = b;
+        }
+        od[i + 3] = alpha;
     }
 
     return out;
+}
+
+function decontaminate(channel, bg, alpha) {
+    const f = (channel - (1 - alpha) * bg) / alpha;
+    return f < 0 ? 0 : f > 255 ? 255 : Math.round(f);
 }
 
 /** 以選取範圍四周邊緣一圈像素的平均色，作為背景色的自動初始猜測。 */

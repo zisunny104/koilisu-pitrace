@@ -12,25 +12,50 @@ export class ThumbnailStrip {
         this.statusEl = statusEl;
 
         store.addEventListener('project-changed', () => this.refresh());
-        store.addEventListener('active-piece-changed', () => this.refresh());
+        store.addEventListener('active-piece-changed', () => this.syncActive());
         store.addEventListener('piece-changed', () => this.refresh());
 
         this.refresh();
+    }
+
+    // 只切換 aria-current，不重建 DOM：縮圖按鈕本身帶有 popovertarget，
+    // 若在點擊當下整批重建（innerHTML = ''），瀏覽器原生的 popover 開啟動作
+    // 會因為觸發按鈕被换成新節點、與文件斷開連結而默默失敗。
+    syncActive() {
+        const buttons = this.listEl.querySelectorAll('.piece-thumb');
+        for (const btn of buttons) {
+            btn.setAttribute('aria-current', btn.dataset.pieceId === store.activePieceId ? 'true' : 'false');
+        }
     }
 
     refresh() {
         const pieces = store.project.pieces;
         this.listEl.innerHTML = '';
 
+        if (!pieces.length) {
+            const empty = document.createElement('div');
+            empty.className = 'piece-list-empty-state';
+            empty.innerHTML = `
+                <span class="ts-icon is-layer-group-icon is-heading" aria-hidden="true"></span>
+                <div class="ts-text is-description">還沒有任何物件</div>
+                <div class="ts-text is-description">請先按「新增物件」，再框選範圍</div>
+            `;
+            this.listEl.appendChild(empty);
+            return;
+        }
+
         for (const piece of pieces) {
             const item = document.createElement('div');
+            item.className = 'piece-thumb-item';
             item.setAttribute('role', 'listitem');
 
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'piece-thumb';
+            btn.dataset.pieceId = piece.id;
             btn.setAttribute('aria-current', piece.id === store.activePieceId ? 'true' : 'false');
             btn.setAttribute('aria-label', `物件：${piece.name}`);
+            btn.setAttribute('popovertarget', 'propertiesPanel');
             btn.addEventListener('click', () => {
                 store.setActivePiece(piece.id);
                 announce(this.statusEl, `已選取物件 ${piece.name}`);
@@ -60,6 +85,21 @@ export class ThumbnailStrip {
             btn.appendChild(label);
 
             item.appendChild(btn);
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.type = 'button';
+            deleteBtn.className = 'ts-button is-icon is-small is-negative piece-thumb-delete';
+            deleteBtn.setAttribute('aria-label', `刪除物件 ${piece.name}`);
+            deleteBtn.title = '刪除物件';
+            deleteBtn.innerHTML = '<span class="ts-icon is-xmark-icon" aria-hidden="true"></span>';
+            deleteBtn.addEventListener('click', (evt) => {
+                evt.stopPropagation();
+                if (!window.confirm(`確定要刪除物件「${piece.name}」？`)) return;
+                store.deletePiece(piece.id);
+                announce(this.statusEl, `已刪除物件 ${piece.name}`);
+            });
+            item.appendChild(deleteBtn);
+
             this.listEl.appendChild(item);
 
             renderPiece(piece, { maxDim: thumbMaxDim }).then((rendered) => {

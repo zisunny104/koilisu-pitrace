@@ -7,6 +7,7 @@ import { store } from '../state.js';
 import { selectionBounds } from '../tools/transform.js';
 import { estimateAlpha } from '../processing/bg-remove.js';
 import { announce } from '../a11y.js';
+import { buildSelectionMask } from './selection-mask.js';
 
 const maxPreviewDim = 1400;
 
@@ -33,17 +34,11 @@ export async function renderPiece(piece, opts = {}) {
     let ctx = canvas.getContext('2d');
     ctx.drawImage(bitmap, x, y, w, h, 0, 0, w, h);
 
-    if (piece.selection.type === 'lasso' && piece.selection.path?.length > 2) {
+    const closedLoops = piece.selection.type === 'lasso' ? (piece.selection.loops ?? []).filter((l) => l.closed && l.path.length > 2) : [];
+    if (closedLoops.length) {
+        const mask = buildSelectionMask(closedLoops, w, h, x, y);
         ctx.globalCompositeOperation = 'destination-in';
-        ctx.beginPath();
-        piece.selection.path.forEach((p, i) => {
-            const px = p.x - x;
-            const py = p.y - y;
-            if (i === 0) ctx.moveTo(px, py);
-            else ctx.lineTo(px, py);
-        });
-        ctx.closePath();
-        ctx.fill();
+        ctx.drawImage(mask, 0, 0);
         ctx.globalCompositeOperation = 'source-over';
     }
 
@@ -105,7 +100,9 @@ export class PreviewPane {
         store.addEventListener('active-piece-changed', () => this.refresh());
         store.addEventListener('piece-changed', () => this.refresh());
         store.addEventListener('scan-changed', () => this.refresh());
-        window.addEventListener('resize', () => this.refresh());
+        // 容器尺寸會因版面 reflow（不只是 window resize）改變，同一種「canvas 緩衝區跟 CSS 框尺寸
+        // 對不上、被瀏覽器整個拉伸」問題，用 ResizeObserver 盯容器本身才會可靠跟著重算。
+        new ResizeObserver(() => this.refresh()).observe(canvas.parentElement);
 
         this.refresh();
     }

@@ -17,4 +17,4 @@ wireUI({ scanView, statusEl });
 wireToolShortcuts(statusEl);
 
 makeToolbarArrowNav(document.getElementById('projectToolbar'));
-makeToolbarArrowNav(document.getElementById('mainToolbar'));
+makeToolbarArrowNav(document.querySelector('.canvas-floating-toolbar'));

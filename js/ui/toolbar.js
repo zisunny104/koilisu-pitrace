@@ -109,7 +109,8 @@ function wireDragDropImport(statusEl) {
 
 export function wireUI({ scanView, statusEl }) {
     wireProjectToolbar(statusEl);
-    wireMainToolbar(scanView, statusEl);
+    wireScanPaneHeader(scanView, statusEl);
+    wireCanvasFloatingToolbar(scanView);
     wirePieceList(statusEl);
     wirePropertiesPanel(statusEl);
     wireDragDropImport(statusEl);
@@ -120,15 +121,15 @@ export function wireUI({ scanView, statusEl }) {
     syncPropertiesPanel(statusEl);
 }
 
-// 物件清單／屬性面板在還沒有任何圖片可用時沒有意義（新增物件、框選都無從做起），先隱藏以減少畫面雜訊。
+// 物件清單在還沒有任何圖片可用時沒有意義（新增物件、框選都無從做起），先隱藏以減少畫面雜訊。
+// 屬性面板已改為 popover，只由物件縮圖的 popovertarget 觸發開啟（沒有圖片就沒有縮圖可點），
+// 不需要也不應該在這裡用 inline display 蓋掉它自己的開關狀態。
 function wireBelowFoldVisibility() {
     const pieceListBox = el('pieceListBox');
-    const propertiesPanel = el('propertiesPanel');
 
     function sync() {
         const hasScan = store.project.scans.length > 0;
         pieceListBox.style.display = hasScan ? '' : 'none';
-        propertiesPanel.style.display = hasScan ? '' : 'none';
     }
 
     store.addEventListener('project-changed', sync);
@@ -226,13 +227,8 @@ function wireProjectToolbar(statusEl) {
     });
 }
 
-function wireMainToolbar(scanView, statusEl) {
-    document.querySelectorAll('input[name="tool"]').forEach((radio) => {
-        radio.addEventListener('change', () => {
-            if (radio.checked) store.setActiveTool(radio.value);
-        });
-    });
-
+// #scanPaneBox 標題列：復原/重做 + 全螢幕工作區切換。
+function wireScanPaneHeader(scanView, statusEl) {
     el('btnUndo').addEventListener('click', () => {
         announce(statusEl, store.undo() ? '已復原' : '沒有可復原的步驟');
     });
@@ -246,25 +242,16 @@ function wireMainToolbar(scanView, statusEl) {
     store.addEventListener('history-changed', syncHistoryButtons);
     syncHistoryButtons();
 
-    el('btnRotateLeft').addEventListener('click', () => {
-        const piece = store.getActivePiece();
-        if (!piece) return announce(statusEl, '請先選取物件');
-        rotatePieceBy(piece.id, -90);
-        announce(statusEl, `已向左旋轉，目前角度 ${piece.rotation}°`);
+    wireFocusMode(scanView);
+}
+
+// 畫布內下方置中的浮動工具列：工具選取 + 縮放。
+function wireCanvasFloatingToolbar(scanView) {
+    document.querySelectorAll('input[name="tool"]').forEach((radio) => {
+        radio.addEventListener('change', () => {
+            if (radio.checked) store.setActiveTool(radio.value);
+        });
     });
-    el('btnRotateRight').addEventListener('click', () => {
-        const piece = store.getActivePiece();
-        if (!piece) return announce(statusEl, '請先選取物件');
-        rotatePieceBy(piece.id, 90);
-        announce(statusEl, `已向右旋轉，目前角度 ${piece.rotation}°`);
-    });
-    const syncRotateButtons = () => {
-        const hasPiece = !!store.getActivePiece();
-        el('btnRotateLeft').disabled = !hasPiece;
-        el('btnRotateRight').disabled = !hasPiece;
-    };
-    store.addEventListener('active-piece-changed', syncRotateButtons);
-    syncRotateButtons();
 
     const zoomControl = wireZoomControl(scanView);
     el('btnZoomOut').addEventListener('click', () => scanView.zoomBy(1 / 1.2));
@@ -279,13 +266,11 @@ function wireMainToolbar(scanView, statusEl) {
     };
     store.addEventListener('scan-changed', syncCanvasControls);
     syncCanvasControls();
-
-    wireFullscreenToggle();
-    wireFocusMode(scanView);
 }
 
-// 左側工作區「單獨全螢幕」模式：畫布固定滿版，編輯工具列（#mainToolbar）改用 CSS 浮動於畫布上方
-// （同一個 DOM 節點，只是視覺上抽離版面，不重新建立按鈕或事件監聽）。
+// 左側工作區「單獨全螢幕」模式：靠 CSS 讓 #scanPaneBox 本身 position:fixed;inset:0 撐滿畫面，
+// 標題列（undo/redo/focus）與畫布浮動列（工具/縮放）都物理上活在 #scanPaneBox 底下，
+// 因此會被一起帶進全螢幕，不需要另外搬移或重新綁定事件。
 function wireFocusMode(scanView) {
     const btn = el('btnFocusMode');
     const mainEl = document.getElementById('main-content');
@@ -379,43 +364,35 @@ function wireZoomControl(scanView) {
     return { setEnabled };
 }
 
-function wireFullscreenToggle() {
-    const btn = el('btnFullscreen');
-    const target = document.getElementById('main-content');
-    const icon = btn.querySelector('.ts-icon');
-
-    btn.addEventListener('click', () => {
-        if (document.fullscreenElement) document.exitFullscreen();
-        else target.requestFullscreen();
-    });
-
-    document.addEventListener('fullscreenchange', () => {
-        const isFs = document.fullscreenElement === target;
-        btn.setAttribute('aria-pressed', String(isFs));
-        const label = isFs ? '結束全螢幕' : '全螢幕檢視';
-        btn.setAttribute('aria-label', label);
-        btn.title = label;
-        icon.className = `ts-icon ${isFs ? 'is-compress-icon' : 'is-window-maximize-icon'}`;
-    });
-}
-
 function wirePieceList(statusEl) {
     el('btnAddPiece').addEventListener('click', () => {
         if (!store.activeScanId) return announce(statusEl, '請先匯入圖片');
         store.addPiece(store.activeScanId);
         announce(statusEl, '已新增物件，請框選範圍');
     });
-
-    el('btnDeletePiece').addEventListener('click', () => {
-        const piece = store.getActivePiece();
-        if (!piece) return announce(statusEl, '請先選取物件');
-        if (!window.confirm(`確定要刪除物件「${piece.name}」？`)) return;
-        store.deletePiece(piece.id);
-        announce(statusEl, '已刪除物件');
-    });
 }
 
 function wirePropertiesPanel(statusEl) {
+    el('btnRotateLeft').addEventListener('click', () => {
+        const piece = store.getActivePiece();
+        if (!piece) return announce(statusEl, '請先選取物件');
+        rotatePieceBy(piece.id, -90);
+        announce(statusEl, `已向左旋轉，目前角度 ${piece.rotation}°`);
+    });
+    el('btnRotateRight').addEventListener('click', () => {
+        const piece = store.getActivePiece();
+        if (!piece) return announce(statusEl, '請先選取物件');
+        rotatePieceBy(piece.id, 90);
+        announce(statusEl, `已向右旋轉，目前角度 ${piece.rotation}°`);
+    });
+    const syncRotateButtons = () => {
+        const hasPiece = !!store.getActivePiece();
+        el('btnRotateLeft').disabled = !hasPiece;
+        el('btnRotateRight').disabled = !hasPiece;
+    };
+    store.addEventListener('active-piece-changed', syncRotateButtons);
+    syncRotateButtons();
+
     el('pieceNameInput').addEventListener('change', (evt) => {
         const piece = store.getActivePiece();
         if (!piece) return;
@@ -436,22 +413,11 @@ function wirePropertiesPanel(statusEl) {
         });
     });
 
-    el('btnAddLassoNode').addEventListener('click', () => {
+    el('btnClearLasso').addEventListener('click', () => {
         const piece = store.getActivePiece();
-        if (!piece) return;
-        const path = piece.selection.type === 'lasso' && piece.selection.path ? piece.selection.path.slice() : [];
-        const last = path[path.length - 1];
-        path.push(last ? { x: last.x + 20, y: last.y + 20 } : { x: 50, y: 50 });
-        store.updatePiece(piece.id, { selection: { type: 'lasso', path, closed: false } });
-        announce(statusEl, `已新增節點，共 ${path.length} 個`);
-    });
-
-    el('btnCloseLassoPath').addEventListener('click', () => {
-        const piece = store.getActivePiece();
-        if (!piece || piece.selection.type !== 'lasso' || !piece.selection.path) return;
-        if (piece.selection.path.length < 3) return announce(statusEl, '套索至少需要 3 個節點才能封閉路徑');
-        store.updatePiece(piece.id, { selection: { ...piece.selection, closed: true } });
-        announce(statusEl, '套索路徑已封閉');
+        if (!piece || piece.selection.type !== 'lasso' || !piece.selection.loops?.length) return;
+        store.updatePiece(piece.id, { selection: { type: 'lasso', loops: [] } });
+        announce(statusEl, '已清除所有套索區塊');
     });
 
     el('bgRemovalEnabled').addEventListener('change', (evt) => {
@@ -525,56 +491,36 @@ function wirePropertiesPanel(statusEl) {
     });
 }
 
-function renderLassoNodeList(container, piece, statusEl) {
+function renderLassoLoopList(container, piece, statusEl) {
     container.innerHTML = '';
-    const path = piece.selection.path || [];
-    path.forEach((node, i) => {
+    const loops = piece.selection.loops || [];
+    if (!loops.length) {
+        const empty = document.createElement('div');
+        empty.className = 'ts-text is-description';
+        empty.textContent = '尚未繪製任何套索區塊，請在工作區拖曳滑鼠圈選';
+        container.appendChild(empty);
+        return;
+    }
+    loops.forEach((loop, i) => {
         const row = document.createElement('div');
-        row.className = 'lasso-node-row';
+        row.className = 'lasso-loop-row';
 
-        const idx = document.createElement('span');
-        idx.className = 'ts-text is-description';
-        idx.textContent = String(i + 1);
-        row.appendChild(idx);
-
-        const xWrap = document.createElement('div');
-        xWrap.className = 'ts-input is-fluid';
-        const xInput = document.createElement('input');
-        xInput.type = 'number';
-        xInput.value = Math.round(node.x);
-        xInput.setAttribute('aria-label', `節點 ${i + 1} X 座標`);
-        xInput.addEventListener('change', () => {
-            const p = path.slice();
-            p[i] = { ...p[i], x: Number(xInput.value) };
-            store.updatePiece(piece.id, { selection: { type: 'lasso', path: p, closed: piece.selection.closed } });
-        });
-        xWrap.appendChild(xInput);
-        row.appendChild(xWrap);
-
-        const yWrap = document.createElement('div');
-        yWrap.className = 'ts-input is-fluid';
-        const yInput = document.createElement('input');
-        yInput.type = 'number';
-        yInput.value = Math.round(node.y);
-        yInput.setAttribute('aria-label', `節點 ${i + 1} Y 座標`);
-        yInput.addEventListener('change', () => {
-            const p = path.slice();
-            p[i] = { ...p[i], y: Number(yInput.value) };
-            store.updatePiece(piece.id, { selection: { type: 'lasso', path: p, closed: piece.selection.closed } });
-        });
-        yWrap.appendChild(yInput);
-        row.appendChild(yWrap);
+        const label = document.createElement('span');
+        label.className = 'ts-text';
+        const modeLabel = loop.mode === 'subtract' ? '減選' : '加選';
+        label.textContent = `區塊 ${i + 1}（${modeLabel}・${loop.path.length} 個節點）`;
+        row.appendChild(label);
 
         const delBtn = document.createElement('button');
         delBtn.type = 'button';
         delBtn.className = 'ts-button is-icon is-small';
-        delBtn.setAttribute('aria-label', `刪除節點 ${i + 1}`);
+        delBtn.setAttribute('aria-label', `刪除套索區塊 ${i + 1}`);
         delBtn.innerHTML = '<span class="ts-icon is-xmark-icon" aria-hidden="true"></span>';
         delBtn.addEventListener('click', () => {
-            const p = path.slice();
-            p.splice(i, 1);
-            store.updatePiece(piece.id, { selection: { type: 'lasso', path: p, closed: piece.selection.closed } });
-            announce(statusEl, '已刪除節點');
+            const next = loops.slice();
+            next.splice(i, 1);
+            store.updatePiece(piece.id, { selection: { type: 'lasso', loops: next } });
+            announce(statusEl, `已刪除套索區塊 ${i + 1}`);
         });
         row.appendChild(delBtn);
 
@@ -584,16 +530,8 @@ function renderLassoNodeList(container, piece, statusEl) {
 
 function syncPropertiesPanel(statusEl) {
     const piece = store.getActivePiece();
-    const emptyState = el('propertiesEmptyState');
-    const body = el('propertiesBody');
-
-    if (!piece) {
-        emptyState.style.display = '';
-        body.style.display = 'none';
-        return;
-    }
-    emptyState.style.display = 'none';
-    body.style.display = '';
+    if (!piece) return;
+    el('propertiesBody').style.display = '';
 
     el('pieceNameInput').value = piece.name;
     el('rotationDisplay').textContent = `${piece.rotation}°`;
@@ -609,13 +547,15 @@ function syncPropertiesPanel(statusEl) {
         el('selW').value = r ? Math.round(r.w) : '';
         el('selH').value = r ? Math.round(r.h) : '';
     } else {
-        renderLassoNodeList(el('lassoNodeList'), piece, statusEl);
+        renderLassoLoopList(el('lassoLoopList'), piece, statusEl);
+        el('btnClearLasso').disabled = !piece.selection.loops?.length;
     }
 
     el('bgRemovalEnabled').checked = piece.bgRemoval.enabled;
     el('bgSampleR').value = piece.bgRemoval.sampleColor.r;
     el('bgSampleG').value = piece.bgRemoval.sampleColor.g;
     el('bgSampleB').value = piece.bgRemoval.sampleColor.b;
+    el('bgSampleSwatch').style.backgroundColor = `rgb(${piece.bgRemoval.sampleColor.r}, ${piece.bgRemoval.sampleColor.g}, ${piece.bgRemoval.sampleColor.b})`;
     el('bgThreshold').value = piece.bgRemoval.threshold;
     el('bgThresholdValue').value = piece.bgRemoval.threshold;
     el('bgSoftness').value = piece.bgRemoval.softness;

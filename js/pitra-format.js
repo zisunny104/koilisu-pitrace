@@ -15,6 +15,19 @@ function extFromMime(mime) {
     return MIME_EXT[mime] || '.bin';
 }
 
+// 舊版 .pitra 的套索選取只有單一 path/closed，新版改為 loops 陣列（支援複合路徑）；載入時就地轉換一次。
+function normalizeLoadedPiece(piece) {
+    const sel = piece.selection;
+    if (sel?.type === 'lasso') {
+        if (!sel.loops && sel.path) {
+            piece.selection = { type: 'lasso', loops: [{ path: sel.path, closed: !!sel.closed, mode: 'add' }] };
+        } else if (sel.loops) {
+            sel.loops = sel.loops.map((loop) => ({ mode: 'add', ...loop }));
+        }
+    }
+    return piece;
+}
+
 /**
  * @param {import('./state.js').Project} project
  * @returns {Uint8Array}
@@ -80,7 +93,7 @@ export function parseProjectZip(bytes) {
         if (!data) {
             throw new Error(`遺失物件資料：${id}`);
         }
-        return JSON.parse(decoder.decode(data));
+        return normalizeLoadedPiece(JSON.parse(decoder.decode(data)));
     });
 
     return {

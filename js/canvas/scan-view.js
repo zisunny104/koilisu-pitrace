@@ -6,6 +6,7 @@ import { RectSelectTool } from '../tools/rect-select.js';
 import { LassoTool } from '../tools/lasso.js';
 import { EyedropperTool } from '../processing/bg-remove.js';
 import { announce } from '../a11y.js';
+import { buildSelectionMask } from './selection-mask.js';
 
 class PanTool {
     onPointerDown(imgPt, evt, view) {
@@ -52,14 +53,26 @@ export class ScanView {
         this._toolInstances = {};
         this._activeToolName = store.activeTool;
         this._panStart = null;
+        this._spaceHeld = false;
+        this._spacePendingRelease = false;
 
         canvas.addEventListener('pointerdown', (e) => this._onPointerDown(e));
         canvas.addEventListener('pointermove', (e) => this._onPointerMove(e));
         window.addEventListener('pointerup', (e) => this._onPointerUp(e));
         canvas.addEventListener('dblclick', (e) => this._onDblClick(e));
         canvas.addEventListener('keydown', (e) => this._onKeyDown(e));
+        canvas.addEventListener('keyup', (e) => this._onKeyUp(e));
+        canvas.addEventListener('blur', () => {
+            if (this._spaceHeld && !this._panStart) {
+                this._spaceHeld = false;
+                this.canvas.classList.remove('is-pan-armed');
+            }
+        });
         canvas.addEventListener('wheel', (e) => this._onWheel(e), { passive: false });
-        window.addEventListener('resize', () => this._resizeCanvas());
+        // 用 ResizeObserver 盯容器本身，而不是只聽 window resize——容器尺寸也會因為版面
+        // reflow（例如物件清單載入資料、字型載入完成）改變，這時 window 沒有 resize，
+        // 但畫布的 CSS 框尺寸已經變了，canvas.width/height 沒跟著更新就會被瀏覽器整個拉伸貼合。
+        new ResizeObserver(() => this._resizeCanvas()).observe(canvas.parentElement);
 
         store.addEventListener('scan-changed', () => this.loadActiveScan());
         store.addEventListener('active-piece-changed', () => this.draw());
@@ -78,6 +91,7 @@ export class ScanView {
     }
 
     _currentTool() {
+        if (this._spaceHeld) return (this._toolInstances.pan ??= TOOL_FACTORIES.pan());
         const name = this._activeToolName;
         if (!this._toolInstances[name] && TOOL_FACTORIES[name]) {
             this._toolInstances[name] = TOOL_FACTORIES[name]();
@@ -177,6 +191,11 @@ export class ScanView {
     _onPointerUp(evt) {
         const imgPt = this.cssToImage(evt.clientX, evt.clientY);
         this._currentTool()?.onPointerUp?.(imgPt, evt, this);
+        if (this._spacePendingRelease) {
+            this._spaceHeld = false;
+            this._spacePendingRelease = false;
+            this.canvas.classList.remove('is-pan-armed');
+        }
     }
 
     _onDblClick(evt) {
@@ -190,6 +209,14 @@ export class ScanView {
             return;
         }
         if (!this.bitmap) return;
+
+        if ((evt.key === ' ' || evt.code === 'Space') && !this._spaceHeld) {
+            this._spaceHeld = true;
+            this.canvas.classList.add('is-pan-armed');
+            evt.preventDefault();
+            return;
+        }
+
         this._currentTool()?.onKeyDown?.(evt, this);
 
         const step = evt.shiftKey ? 40 : 10;
@@ -232,6 +259,17 @@ export class ScanView {
         }
     }
 
+    _onKeyUp(evt) {
+        if (evt.key !== ' ' && evt.code !== 'Space') return;
+        if (this._panStart) {
+            // 拖曳中放開空白鍵：延後到 pointerup 再切回原工具，避免拖曳過程中被打斷。
+            this._spacePendingRelease = true;
+            return;
+        }
+        this._spaceHeld = false;
+        this.canvas.classList.remove('is-pan-armed');
+    }
+
     draw() {
         const ctx = this.ctx;
         const rect = this.canvas.getBoundingClientRect();
@@ -262,24 +300,31 @@ export class ScanView {
             ctx.translate(this.tx, this.ty);
             ctx.scale(this.scale, this.scale);
 
+            const closedLoops =
+                piece.selection.type === 'lasso'
+                    ? (piece.selection.loops ?? []).filter((l) => l.closed && l.path.length > 2)
+                    : [];
+
             // 半透明遮罩：只蓋在「選取範圍以外」，讓保留區清楚可辨，被挖空的紙面則變暗。
             if (isActive && this.bitmap) {
-                const hasClosedShape =
-                    (piece.selection.type === 'rect' && piece.selection.rect) ||
-                    (piece.selection.type === 'lasso' && piece.selection.closed && piece.selection.path?.length > 2);
+                const hasClosedShape = (piece.selection.type === 'rect' && piece.selection.rect) || closedLoops.length > 0;
                 if (hasClosedShape) {
                     ctx.save();
-                    ctx.beginPath();
-                    ctx.rect(0, 0, this.bitmap.width, this.bitmap.height);
                     if (piece.selection.type === 'rect') {
                         const r = piece.selection.rect;
+                        ctx.beginPath();
+                        ctx.rect(0, 0, this.bitmap.width, this.bitmap.height);
                         ctx.rect(r.x, r.y, r.w, r.h);
+                        ctx.fillStyle = 'rgba(15,23,42,0.5)';
+                        ctx.fill('evenodd');
                     } else {
-                        piece.selection.path.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
-                        ctx.closePath();
+                        const mask = buildSelectionMask(closedLoops, this.bitmap.width, this.bitmap.height);
+                        ctx.fillStyle = 'rgba(15,23,42,0.5)';
+                        ctx.fillRect(0, 0, this.bitmap.width, this.bitmap.height);
+                        ctx.globalCompositeOperation = 'destination-out';
+                        ctx.drawImage(mask, 0, 0);
+                        ctx.globalCompositeOperation = 'source-over';
                     }
-                    ctx.fillStyle = 'rgba(15,23,42,0.5)';
-                    ctx.fill('evenodd');
                     ctx.restore();
                 }
             }
@@ -290,10 +335,13 @@ export class ScanView {
             if (piece.selection.type === 'rect' && piece.selection.rect) {
                 const r = piece.selection.rect;
                 ctx.strokeRect(r.x, r.y, r.w, r.h);
-            } else if (piece.selection.type === 'lasso' && piece.selection.path?.length > 1) {
+            } else if (piece.selection.type === 'lasso' && piece.selection.loops?.length) {
                 ctx.beginPath();
-                piece.selection.path.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
-                if (piece.selection.closed) ctx.closePath();
+                piece.selection.loops.forEach((loop) => {
+                    if (loop.path.length < 2) return;
+                    loop.path.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+                    if (loop.closed) ctx.closePath();
+                });
                 ctx.stroke();
             }
             ctx.restore();

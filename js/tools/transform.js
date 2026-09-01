@@ -16,14 +16,17 @@ export function selectionBounds(piece) {
         const r = piece.selection.rect;
         return { x: r.x, y: r.y, w: r.w, h: r.h };
     }
-    if (piece.selection.type === 'lasso' && piece.selection.path && piece.selection.path.length > 0) {
-        const xs = piece.selection.path.map((p) => p.x);
-        const ys = piece.selection.path.map((p) => p.y);
-        const minX = Math.min(...xs);
-        const maxX = Math.max(...xs);
-        const minY = Math.min(...ys);
-        const maxY = Math.max(...ys);
-        return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+    if (piece.selection.type === 'lasso' && piece.selection.loops?.length) {
+        const points = piece.selection.loops.flatMap((l) => l.path);
+        if (points.length > 0) {
+            const xs = points.map((p) => p.x);
+            const ys = points.map((p) => p.y);
+            const minX = Math.min(...xs);
+            const maxX = Math.max(...xs);
+            const minY = Math.min(...ys);
+            const maxY = Math.max(...ys);
+            return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+        }
     }
     return null;
 }

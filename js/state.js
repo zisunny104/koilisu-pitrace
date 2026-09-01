@@ -22,7 +22,7 @@ export function createPiece(scanId, overrides = {}) {
         id: makeId('piece'),
         scanId,
         name: '未命名物件',
-        selection: { type: 'rect', rect: null, path: null, closed: false },
+        selection: { type: 'rect', rect: null, loops: [] },
         rotation: 0,
         bgRemoval: {
             enabled: true,
