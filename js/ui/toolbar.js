@@ -9,6 +9,7 @@ import { zipWrite } from '../pitra-zip.js';
 import { sampleBorderColor } from '../processing/bg-remove.js';
 import { announce } from '../a11y.js';
 import { clearSnapshot } from '../autosave.js';
+import { setPreviewMode } from './preview-mode.js';
 
 function el(id) {
     return document.getElementById(id);
@@ -24,14 +25,16 @@ function makeIcon(cls) {
 // 共用下拉選單開關邏輯（觸發鈕 + 選單容器）：點外面關閉、Esc 關閉並把焦點還給觸發鈕。
 // 「匯出全部」「圖片清單」兩個下拉選單共用同一套互動；觸發鈕本身的 click 行為由呼叫端自訂
 // （圖片清單那顆鈕在還沒有圖片時，click 要直接開檔案選取器，不能無條件切換選單開關）。
-function wireDropdownToggle(trigger, menu) {
+function wireDropdownToggle(trigger, menu, onToggle) {
     function close() {
         menu.hidden = true;
         trigger.setAttribute('aria-expanded', 'false');
+        onToggle?.(false);
     }
     function open() {
         menu.hidden = false;
         trigger.setAttribute('aria-expanded', 'true');
+        onToggle?.(true);
     }
     function toggle() {
         if (menu.hidden) open(); else close();
@@ -167,6 +170,7 @@ export function wireUI({ scanView, statusEl }) {
     wirePropertiesPanel(statusEl);
     wireDragDropImport(statusEl);
     wirePreviewBackground();
+    wirePreviewMode();
 
     store.addEventListener('active-piece-changed', () => syncPropertiesPanel(statusEl));
     store.addEventListener('piece-changed', () => syncPropertiesPanel(statusEl));
@@ -209,6 +213,53 @@ function wirePreviewBackground() {
     apply(matched ? stored : 'checker');
 }
 
+const previewModeStorageKey = 'pitrace.previewMode';
+const previewModeLabels = { original: '原始', mask: '遮罩', overlay: '疊加', result: '結果' };
+
+// 預覽模式（原始/遮罩/疊加/結果）跟預覽底色一樣只是顯示偏好，不寫進 .pitra，用 localStorage 記住上次選擇。
+// 標題列小按鈕＋下拉選單，比照「匯出全部」的 wireDropdownToggle 用法；觸發鈕的圖示/文字
+// 即時反映目前選中的模式，選單裡用 aria-checked 標示目前項目（menuitemradio 慣例）。
+function wirePreviewMode() {
+    const trigger = el('btnPreviewMode');
+    const triggerIcon = el('btnPreviewModeIcon');
+    const menu = el('previewModeMenu');
+    if (!trigger || !menu) return;
+    const items = menu.querySelectorAll('button[data-mode]');
+
+    const { close, toggle } = wireDropdownToggle(trigger, menu);
+    trigger.addEventListener('click', toggle);
+
+    function applyMode(mode) {
+        for (const item of items) {
+            item.setAttribute('aria-checked', String(item.dataset.mode === mode));
+        }
+        const active = menu.querySelector(`button[data-mode="${mode}"]`);
+        const label = previewModeLabels[mode] ?? previewModeLabels.result;
+        triggerIcon.className = `ts-icon ${active?.dataset.icon ?? 'is-check-icon'}`;
+        trigger.setAttribute('aria-label', `預覽模式：${label}`);
+        trigger.title = `預覽模式：${label}`;
+        setPreviewMode(mode);
+    }
+
+    let stored = 'result';
+    try {
+        stored = localStorage.getItem(previewModeStorageKey) || 'result';
+    } catch { /* 同上 */ }
+    const matched = [...items].some((item) => item.dataset.mode === stored);
+
+    for (const item of items) {
+        item.addEventListener('click', () => {
+            applyMode(item.dataset.mode);
+            try {
+                localStorage.setItem(previewModeStorageKey, item.dataset.mode);
+            } catch { /* 同上 */ }
+            close();
+            trigger.focus();
+        });
+    }
+    applyMode(matched ? stored : 'result');
+}
+
 // 「匯入圖片」按鈕：還沒有圖片時是單純的匯入按鈕；有圖片後變成下拉選單（觸發鈕顯示目前
 // 使用中的圖片檔名），選單裡每張圖片一列（點列＝切換使用中圖片，鉛筆＝重新命名，垃圾桶＝刪除），
 // 最下面用分隔線隔開放「匯入圖片」——清單（切換圖片）是較常用的操作放上面，新增放最後，
@@ -222,7 +273,10 @@ function wireScanMenu(statusEl) {
     const scanMenu = el('scanMenu');
     const fileImportImage = el('fileImportImage');
 
-    const menuToggle = wireDropdownToggle(btnImportImage, scanMenu);
+    // chevron 只在選單實際展開時才顯示，收合狀態一律隱藏（呼應 syncTrigger 內的初始/重同步狀態）。
+    const menuToggle = wireDropdownToggle(btnImportImage, scanMenu, (isOpen) => {
+        btnImportImageChevron.hidden = !isOpen;
+    });
     let renamingScanId = null; // 正在編輯檔名的圖片；渲染時該列換成輸入框，其餘照舊
 
     function removeScanWithConfirm(scan) {
@@ -367,7 +421,7 @@ function wireScanMenu(statusEl) {
         } else {
             const active = store.getActiveScan();
             btnImportImageLabel.textContent = active ? active.filename : `${scans.length} 張圖片`;
-            btnImportImageChevron.hidden = false;
+            btnImportImageChevron.hidden = scanMenu.hidden;
             btnImportImage.title = active ? active.filename : '';
             btnImportImage.setAttribute('aria-haspopup', 'menu');
             btnImportImage.setAttribute('aria-expanded', String(!scanMenu.hidden));
@@ -765,6 +819,7 @@ function wirePropertiesPanel(statusEl) {
         const piece = store.getActivePiece();
         if (!piece) return;
         store.updatePiece(piece.id, { bgRemoval: { ...piece.bgRemoval, enabled: evt.target.checked } });
+        syncEnhanceDisabledState(evt.target.checked);
     });
 
     ['bgSampleR', 'bgSampleG', 'bgSampleB'].forEach((id) => {
@@ -810,6 +865,18 @@ function wirePropertiesPanel(statusEl) {
         const piece = store.getActivePiece();
         if (!piece) return;
         store.updatePiece(piece.id, { bgRemoval: { ...piece.bgRemoval, softness: n } });
+    });
+
+    bindRangeNumberPair('bgRadius', 'bgRadiusValue', (n) => {
+        const piece = store.getActivePiece();
+        if (!piece) return;
+        store.updatePiece(piece.id, { bgRemoval: { ...piece.bgRemoval, bgRadius: n } });
+    });
+
+    bindRangeNumberPair('isolationSuppress', 'isolationSuppressValue', (n) => {
+        const piece = store.getActivePiece();
+        if (!piece) return;
+        store.updatePiece(piece.id, { bgRemoval: { ...piece.bgRemoval, isolationSuppress: n } });
     });
 
     el('svgVectorEnabled').addEventListener('change', (evt) => {
@@ -900,6 +967,15 @@ function renderLassoLoopList(container, piece, statusEl) {
     });
 }
 
+// 對比度/亮度只影響去背分析用的遮罩，去背關閉時完全沒有可見效果，停用滑桿避免使用者疑惑。
+function syncEnhanceDisabledState(bgRemovalEnabled) {
+    const disabled = !bgRemovalEnabled;
+    el('enhanceContrast').disabled = disabled;
+    el('enhanceContrastValue').disabled = disabled;
+    el('enhanceBrightness').disabled = disabled;
+    el('enhanceBrightnessValue').disabled = disabled;
+}
+
 function syncPropertiesPanel(statusEl) {
     const piece = store.getActivePiece();
     const emptyEl = el('propertiesEmptyState');
@@ -937,6 +1013,7 @@ function syncPropertiesPanel(statusEl) {
     el('enhanceBrightnessValue').value = piece.enhance?.brightness ?? 0;
 
     el('bgRemovalEnabled').checked = piece.bgRemoval.enabled;
+    syncEnhanceDisabledState(piece.bgRemoval.enabled);
     el('bgSampleR').value = piece.bgRemoval.sampleColor.r;
     el('bgSampleG').value = piece.bgRemoval.sampleColor.g;
     el('bgSampleB').value = piece.bgRemoval.sampleColor.b;
@@ -945,6 +1022,10 @@ function syncPropertiesPanel(statusEl) {
     el('bgThresholdValue').value = piece.bgRemoval.threshold;
     el('bgSoftness').value = piece.bgRemoval.softness;
     el('bgSoftnessValue').value = piece.bgRemoval.softness;
+    el('bgRadius').value = piece.bgRemoval.bgRadius ?? 40;
+    el('bgRadiusValue').value = piece.bgRemoval.bgRadius ?? 40;
+    el('isolationSuppress').value = piece.bgRemoval.isolationSuppress ?? 40;
+    el('isolationSuppressValue').value = piece.bgRemoval.isolationSuppress ?? 40;
 
     el('svgVectorEnabled').checked = piece.svgExport?.enabled ?? false;
     el('svgSimplify').value = piece.svgExport?.simplifyTolerance ?? 0.75;

@@ -1,5 +1,9 @@
-// 右側「即時預覽」與 PNG 匯出共用的純渲染管線：renderPiece() 從原始掃描位元組出發，
-// 依序套用「裁切／套索遮罩 → 橡皮擦擦除 → 旋轉 → 對比度/亮度增強 → 去背」，
+// 右側「即時預覽」與 PNG 匯出共用的純渲染管線。renderGeometry() 先做「裁切／套索遮罩 →
+// 橡皮擦擦除 → 旋轉 → 降採樣」這段跟顏色無關的幾何處理，得到 originalImageData（未經任何
+// 增強/去背，是使用者原始掃描的真實像素）；renderPiece()/renderMaskPreview()/
+// renderOverlayPreview() 三者共用的 computeMaskForPiece() 再從 originalImageData 複製一份
+// 「分析圖」套用對比度/亮度增強＋computeMask() 算出遮罩，最終輸出永遠用
+// compositeOriginalWithMask() 合成——增強只影響「抓不抓得到筆跡」，不會滲入最終顏色。
 // 非破壞性——原始掃描位元組從不被修改，橡皮擦筆刷跟增強參數都只是存在 piece 上的資料，
 // 每次都是重新算過，不是疊加在前一次算完的像素上。
 // 增強放在去背「之前」：淡色筆跡（例如很淺的彩色筆）跟背景的顏色距離本來就小，
@@ -12,10 +16,13 @@
 
 import { store } from '../state.js';
 import { selectionBounds } from '../tools/transform.js';
-import { estimateAlpha } from '../processing/bg-remove.js';
+import { computeMask, compositeOriginalWithMask } from '../processing/bg-remove.js';
 import { traceAlphaContours } from '../processing/vectorize.js';
 import { announce } from '../a11y.js';
 import { buildSelectionMask } from './selection-mask.js';
+import { getPreviewMode, onPreviewModeChange } from '../ui/preview-mode.js';
+
+const overlayTintRgb = '249, 115, 22'; // 跟 scan-view.js 選取範圍同一組橘色，維持視覺語言一致
 
 const maxPreviewDim = 1400;
 const defaultSimplifyTolerance = 0.75;
@@ -62,11 +69,13 @@ function cropToOpaqueBounds(canvas) {
 }
 
 /**
+ * 幾何處理管線（裁切／套索遮罩 → 橡皮擦擦除 → 旋轉 → 降採樣），跟顏色無關，
+ * 四種預覽模式與 PNG/SVG 匯出都共用這一段。
  * @param {object} piece
  * @param {{maxDim?: number}} opts maxDim 為 0 表示不限制（匯出用完整解析度）
- * @returns {Promise<OffscreenCanvas|null>}
+ * @returns {Promise<{canvas: OffscreenCanvas, originalImageData: ImageData}|null>}
  */
-export async function renderPiece(piece, opts = {}) {
+async function renderGeometry(piece, opts = {}) {
     if (!piece) return null;
     const bitmap = await store.getScanBitmap(piece.scanId);
     if (!bitmap) return null;
@@ -118,25 +127,111 @@ export async function renderPiece(piece, opts = {}) {
     canvas = downscaleCanvas(canvas, opts.maxDim ?? maxPreviewDim);
     ctx = canvas.getContext('2d');
 
+    const originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    return { canvas, originalImageData };
+}
+
+/**
+ * 從 originalImageData 複製一份分析圖套用增強，算出去背遮罩；originalImageData 本身不受影響。
+ * @param {object} piece
+ * @param {ImageData} originalImageData
+ * @returns {Float32Array|null} bgRemoval 未啟用時回傳 null
+ */
+function computeMaskForPiece(piece, originalImageData) {
+    if (!piece.bgRemoval?.enabled) return null;
+    const { width, height } = originalImageData;
+    const analysisCanvas = new OffscreenCanvas(width, height);
+    const actx = analysisCanvas.getContext('2d');
+    actx.putImageData(originalImageData, 0, 0);
+
     const hasEnhance = !!(piece.enhance?.contrast || piece.enhance?.brightness);
-    if (hasEnhance) {
-        applyEnhance(ctx, canvas, piece.enhance);
+    if (hasEnhance) applyEnhance(actx, analysisCanvas, piece.enhance);
+
+    const analysisImageData = actx.getImageData(0, 0, width, height);
+    const sampleColorEnhanced = hasEnhance
+        ? enhanceColor(piece.bgRemoval.sampleColor, piece.enhance)
+        : piece.bgRemoval.sampleColor;
+
+    return computeMask(analysisImageData, sampleColorEnhanced, {
+        threshold: piece.bgRemoval.threshold,
+        softness: piece.bgRemoval.softness,
+        bgRadius: piece.bgRemoval.bgRadius,
+        isolationSuppress: piece.bgRemoval.isolationSuppress,
+    });
+}
+
+/**
+ * 「結果」模式：最終去背輸出，供互動預覽與 PNG/SVG 匯出共用。
+ * @param {object} piece
+ * @param {{maxDim?: number}} opts maxDim 為 0 表示不限制（匯出用完整解析度）
+ * @returns {Promise<OffscreenCanvas|null>}
+ */
+export async function renderPiece(piece, opts = {}) {
+    const geo = await renderGeometry(piece, opts);
+    if (!geo) return null;
+    const { canvas, originalImageData } = geo;
+
+    const maskAlpha = computeMaskForPiece(piece, originalImageData);
+    if (maskAlpha) {
+        const composited = compositeOriginalWithMask(originalImageData, maskAlpha, piece.bgRemoval.sampleColor, {
+            bgRadius: piece.bgRemoval.bgRadius,
+        });
+        canvas.getContext('2d').putImageData(composited, 0, 0);
     }
 
-    if (piece.bgRemoval?.enabled) {
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const sampleColor = hasEnhance
-            ? enhanceColor(piece.bgRemoval.sampleColor, piece.enhance)
-            : piece.bgRemoval.sampleColor;
-        const alphaData = estimateAlpha(
-            imageData,
-            sampleColor,
-            piece.bgRemoval.threshold,
-            piece.bgRemoval.softness
-        );
-        ctx.putImageData(alphaData, 0, 0);
-    }
+    return canvas;
+}
 
+/** 「原始」模式：完全跳過增強／去背，顯示使用者原始掃描的真實顏色。 */
+export async function renderOriginalPreview(piece, opts = {}) {
+    const geo = await renderGeometry(piece, opts);
+    return geo ? geo.canvas : null;
+}
+
+/** 「遮罩」模式：把去背遮罩轉成灰階圖（黑=完全透明、白=完全保留、灰=部分透明）。 */
+export async function renderMaskPreview(piece, opts = {}) {
+    const geo = await renderGeometry(piece, opts);
+    if (!geo) return null;
+    const { canvas, originalImageData } = geo;
+    const { width, height } = originalImageData;
+    const maskAlpha = computeMaskForPiece(piece, originalImageData);
+
+    const out = new ImageData(width, height);
+    const od = out.data;
+    for (let i = 0, p = 0; i < width * height; i++, p += 4) {
+        const v = maskAlpha ? Math.round(Math.max(0, Math.min(1, maskAlpha[i])) * 255) : 0;
+        od[p] = v;
+        od[p + 1] = v;
+        od[p + 2] = v;
+        od[p + 3] = 255;
+    }
+    canvas.getContext('2d').putImageData(out, 0, 0);
+    return canvas;
+}
+
+/** 「疊加」模式：原圖上疊一層以遮罩 alpha 為不透明度的橘色 tint，標示目前會保留的範圍。 */
+export async function renderOverlayPreview(piece, opts = {}) {
+    const geo = await renderGeometry(piece, opts);
+    if (!geo) return null;
+    const { canvas, originalImageData } = geo;
+    const maskAlpha = computeMaskForPiece(piece, originalImageData);
+    if (!maskAlpha) return canvas;
+
+    const ctx = canvas.getContext('2d');
+    const { width, height } = originalImageData;
+    const [tintR, tintG, tintB] = overlayTintRgb.split(',').map(Number);
+    const tint = new OffscreenCanvas(width, height);
+    const tctx = tint.getContext('2d');
+    const tintData = tctx.createImageData(width, height);
+    const td = tintData.data;
+    for (let i = 0, p = 0; i < width * height; i++, p += 4) {
+        td[p] = tintR;
+        td[p + 1] = tintG;
+        td[p + 2] = tintB;
+        td[p + 3] = Math.round(Math.max(0, Math.min(1, maskAlpha[i])) * 255 * 0.55);
+    }
+    tctx.putImageData(tintData, 0, 0);
+    ctx.drawImage(tint, 0, 0);
     return canvas;
 }
 
@@ -222,10 +317,30 @@ export async function exportPiecePNG(piece) {
     return cropToOpaqueBounds(canvas).convertToBlob({ type: 'image/png' });
 }
 
-/** SVG 匯出與向量預覽共用：對裁掉透明邊界後的去背結果描邊，回傳輪廓路徑資料。 */
+/**
+ * SVG 匯出與向量預覽共用：對輪廓描邊，回傳輪廓路徑資料。
+ * 向量描邊只是形狀操作、只讀 alpha 通道，直接用 computeMaskForPiece() 的遮罩當 alpha 來源即可，
+ * 不需要走 renderPiece() 整套「去背合成」流程（那是為了算出正確的 RGB 去污染顏色，
+ * 但描邊完全用不到顏色，繞這一圈只是白白多算三個通道的局部背景估算＋逐像素去污染）。
+ */
 async function tracePieceVector(piece) {
-    const canvas = await renderPiece(piece, { maxDim: 0 });
-    if (!canvas) return null;
+    const geo = await renderGeometry(piece, { maxDim: 0 });
+    if (!geo) return null;
+    const { canvas, originalImageData } = geo;
+    const { width, height } = originalImageData;
+    const maskAlpha = computeMaskForPiece(piece, originalImageData);
+
+    const alphaImage = new ImageData(width, height);
+    if (maskAlpha) {
+        const ad = alphaImage.data;
+        for (let i = 0, p = 0; i < width * height; i++, p += 4) {
+            ad[p + 3] = Math.round(Math.max(0, Math.min(1, maskAlpha[i])) * 255);
+        }
+    } else {
+        alphaImage.data.fill(255); // 去背關閉：全圖視為不透明，跟 renderPiece 行為一致
+    }
+    canvas.getContext('2d').putImageData(alphaImage, 0, 0);
+
     const cropped = cropToOpaqueBounds(canvas);
     const ctx = cropped.getContext('2d');
     const imageData = ctx.getImageData(0, 0, cropped.width, cropped.height);
@@ -276,6 +391,7 @@ export class PreviewPane {
         // 容器尺寸會因版面 reflow（不只是 window resize）改變，同一種「canvas 緩衝區跟 CSS 框尺寸
         // 對不上、被瀏覽器整個拉伸」問題，用 ResizeObserver 盯容器本身才會可靠跟著重算。
         new ResizeObserver(() => this.refresh()).observe(canvas.parentElement);
+        onPreviewModeChange(() => this.refresh());
 
         this.refresh();
     }
@@ -318,7 +434,14 @@ export class PreviewPane {
             rendered = vec?.canvas ?? null;
             nodeCount = vec?.nodeCount ?? null;
         } else {
-            rendered = await renderPiece(piece, {});
+            const renderByMode = {
+                original: renderOriginalPreview,
+                mask: renderMaskPreview,
+                overlay: renderOverlayPreview,
+                result: renderPiece,
+            };
+            const render = renderByMode[getPreviewMode()] ?? renderPiece;
+            rendered = await render(piece, {});
         }
         clearTimeout(showLoadingTimer);
         if (this._loadToken !== token) return; // 已有更新的渲染請求，捨棄過期結果

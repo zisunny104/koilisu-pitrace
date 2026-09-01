@@ -37,8 +37,10 @@ export function createPiece(scanId, overrides = {}) {
         bgRemoval: {
             enabled: true,
             sampleColor: { r: 255, g: 255, b: 255 },
-            threshold: 40,
-            softness: 24,
+            threshold: 12,
+            softness: 10,
+            bgRadius: 40,
+            isolationSuppress: 40,
         },
         svgExport: {
             enabled: false,

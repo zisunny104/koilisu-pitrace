@@ -39,6 +39,16 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         min-height: 0;
     }
 
+    /* 分隔線＋main 包成同一個 flex 子項：預設（非寬版）跟直接把兩者當 #pageContainer
+       的手足擺著效果一樣，只是多包一層；寬版模式要把 100vh 錨點下移時（見下方 media
+       query）才用得到這層，讓分隔線能跟著 main 一起被鎖進同一個 100vh 區塊。 */
+    #mainAnchor {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+    }
+
     main#main-content {
         flex: 1;
         display: flex;
@@ -93,16 +103,20 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
             height: 100vh;
         }
 
-        /* 寬版模式：把固定 100vh 的錨點再往下移一層到 main#main-content 本身，
+        /* 寬版模式：把固定 100vh 的錨點再往下移一層到 #mainAnchor（分隔線＋main 的外層），
            讓標題區塊跟頁尾一樣「需要捲動才看得到」——.main-content／#pageContainer
-           改回依內容自然撐高（標題+分隔線的高度 + main 的 100vh），總高度超出一個視窗，
-           body 因此變高、可捲動，原理跟上面頁尾能被捲到完全一樣，只是這次換成標題。 */
+           改回依內容自然撐高（標題的高度 + #mainAnchor 的 100vh），總高度超出一個視窗，
+           body 因此變高、可捲動，原理跟上面頁尾能被捲到完全一樣，只是這次換成標題。
+           錨點刻意落在 #mainAnchor 而非 main 本身：捲動切換寬版時分隔線會露在畫面最上緣，
+           專案操作列（含專案名稱輸入框）才有一條分隔線墊在上面，不會直接貼死在視窗頂端。
+           main 內部仍是 flex:1/min-height:0（見上方基礎規則），會自動吃掉扣掉分隔線後
+           剩下的高度，不需要另外算 calc()。 */
         .main-content.is-fluid {
             flex: 1;
             height: auto;
         }
 
-        .main-content.is-fluid main#main-content {
+        .main-content.is-fluid #mainAnchor {
             flex: none;
             height: 100vh;
         }
@@ -757,9 +771,10 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                 </div>
             </div>
 
-            <div class="ts-divider has-vertically-spaced"></div>
+            <div id="mainAnchor">
+                <div class="ts-divider has-vertically-spaced"></div>
 
-            <main id="main-content">
+                <main id="main-content">
 
                 <!-- 專案操作列 -->
                 <div class="pane-toolbar" role="toolbar" aria-label="專案操作" id="projectToolbar">
@@ -952,23 +967,59 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                     <span class="ts-icon is-wand-magic-sparkles-icon" aria-hidden="true"></span>
                                     <span>物件預覽</span>
                                 </span>
-                                <div class="preview-bg-toggle" role="radiogroup" aria-label="預覽底色">
-                                    <label class="preview-bg-toggle-item" data-tooltip="棋盤格底">
-                                        <input type="radio" name="previewBg" value="checker" id="previewBg-checker" checked aria-label="棋盤格底">
-                                        <span class="preview-bg-swatch is-checker" aria-hidden="true"></span>
-                                    </label>
-                                    <label class="preview-bg-toggle-item" data-tooltip="黑底">
-                                        <input type="radio" name="previewBg" value="black" id="previewBg-black" aria-label="黑底">
-                                        <span class="preview-bg-swatch is-black" aria-hidden="true"></span>
-                                    </label>
-                                    <label class="preview-bg-toggle-item" data-tooltip="白底">
-                                        <input type="radio" name="previewBg" value="white" id="previewBg-white" aria-label="白底">
-                                        <span class="preview-bg-swatch is-white" aria-hidden="true"></span>
-                                    </label>
-                                    <label class="preview-bg-toggle-item" data-tooltip="灰底">
-                                        <input type="radio" name="previewBg" value="gray" id="previewBg-gray" aria-label="灰底">
-                                        <span class="preview-bg-swatch is-gray" aria-hidden="true"></span>
-                                    </label>
+                                <div class="pane-toolbar-buttons">
+                                    <div class="preview-bg-toggle" role="radiogroup" aria-label="預覽底色">
+                                        <label class="preview-bg-toggle-item" data-tooltip="棋盤格底">
+                                            <input type="radio" name="previewBg" value="checker" id="previewBg-checker" checked aria-label="棋盤格底">
+                                            <span class="preview-bg-swatch is-checker" aria-hidden="true"></span>
+                                        </label>
+                                        <label class="preview-bg-toggle-item" data-tooltip="黑底">
+                                            <input type="radio" name="previewBg" value="black" id="previewBg-black" aria-label="黑底">
+                                            <span class="preview-bg-swatch is-black" aria-hidden="true"></span>
+                                        </label>
+                                        <label class="preview-bg-toggle-item" data-tooltip="白底">
+                                            <input type="radio" name="previewBg" value="white" id="previewBg-white" aria-label="白底">
+                                            <span class="preview-bg-swatch is-white" aria-hidden="true"></span>
+                                        </label>
+                                        <label class="preview-bg-toggle-item" data-tooltip="灰底">
+                                            <input type="radio" name="previewBg" value="gray" id="previewBg-gray" aria-label="灰底">
+                                            <span class="preview-bg-swatch is-gray" aria-hidden="true"></span>
+                                        </label>
+                                    </div>
+                                    <div class="pane-menu-wrap">
+                                        <button id="btnPreviewMode" class="ts-button is-icon is-small is-ghost"
+                                            aria-label="預覽模式：結果" title="預覽模式：結果"
+                                            aria-haspopup="menu" aria-expanded="false">
+                                            <span class="ts-icon is-check-icon" aria-hidden="true" id="btnPreviewModeIcon"></span>
+                                        </button>
+                                        <div class="ts-menu pane-dropdown-menu" id="previewModeMenu" role="menu"
+                                            aria-label="預覽模式" hidden>
+                                            <button type="button" class="item" role="menuitemradio" aria-checked="false"
+                                                id="previewMode-original" data-mode="original" data-icon="is-image-icon"
+                                                title="原始掃描顏色，不套用增強或去背">
+                                                <span class="ts-icon is-image-icon" aria-hidden="true"></span>
+                                                <span>原始</span>
+                                            </button>
+                                            <button type="button" class="item" role="menuitemradio" aria-checked="false"
+                                                id="previewMode-mask" data-mode="mask" data-icon="is-circle-half-stroke-icon"
+                                                title="去背遮罩灰階視覺化">
+                                                <span class="ts-icon is-circle-half-stroke-icon" aria-hidden="true"></span>
+                                                <span>遮罩</span>
+                                            </button>
+                                            <button type="button" class="item" role="menuitemradio" aria-checked="false"
+                                                id="previewMode-overlay" data-mode="overlay" data-icon="is-layer-group-icon"
+                                                title="原圖疊加去背範圍標示">
+                                                <span class="ts-icon is-layer-group-icon" aria-hidden="true"></span>
+                                                <span>疊加</span>
+                                            </button>
+                                            <button type="button" class="item" role="menuitemradio" aria-checked="true"
+                                                id="previewMode-result" data-mode="result" data-icon="is-check-icon"
+                                                title="最終去背合成結果">
+                                                <span class="ts-icon is-check-icon" aria-hidden="true"></span>
+                                                <span>結果</span>
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             <div class="pane-canvas-wrap is-preview bg-checker" id="previewCanvasWrap">
@@ -1117,18 +1168,34 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                             </div>
 
                             <div class="has-top-spaced">
-                                <label class="ts-text is-label" for="bgThreshold">顏色距離門檻</label>
+                                <label class="ts-text is-label" for="bgThreshold">顏色距離門檻（ΔE）</label>
                                 <div class="range-row">
-                                    <div class="ts-range"><input type="range" id="bgThreshold" min="0" max="255" value="40"></div>
-                                    <div class="ts-input"><input type="number" id="bgThresholdValue" min="0" max="255" value="40" aria-label="顏色距離門檻數值"></div>
+                                    <div class="ts-range"><input type="range" id="bgThreshold" min="0" max="60" value="12"></div>
+                                    <div class="ts-input"><input type="number" id="bgThresholdValue" min="0" max="60" value="12" aria-label="顏色距離門檻數值"></div>
                                 </div>
                             </div>
 
                             <div class="has-top-spaced-small">
                                 <label class="ts-text is-label" for="bgSoftness">邊緣柔化</label>
                                 <div class="range-row">
-                                    <div class="ts-range"><input type="range" id="bgSoftness" min="1" max="120" value="24"></div>
-                                    <div class="ts-input"><input type="number" id="bgSoftnessValue" min="1" max="120" value="24" aria-label="邊緣柔化數值"></div>
+                                    <div class="ts-range"><input type="range" id="bgSoftness" min="1" max="40" value="10"></div>
+                                    <div class="ts-input"><input type="number" id="bgSoftnessValue" min="1" max="40" value="10" aria-label="邊緣柔化數值"></div>
+                                </div>
+                            </div>
+
+                            <div class="has-top-spaced-small">
+                                <label class="ts-text is-label" for="bgRadius">背景估算半徑</label>
+                                <div class="range-row">
+                                    <div class="ts-range"><input type="range" id="bgRadius" min="4" max="200" value="40"></div>
+                                    <div class="ts-input"><input type="number" id="bgRadiusValue" min="4" max="200" value="40" aria-label="背景估算半徑數值"></div>
+                                </div>
+                            </div>
+
+                            <div class="has-top-spaced-small">
+                                <label class="ts-text is-label" for="isolationSuppress">孤立雜點抑制</label>
+                                <div class="range-row">
+                                    <div class="ts-range"><input type="range" id="isolationSuppress" min="0" max="100" value="40"></div>
+                                    <div class="ts-input"><input type="number" id="isolationSuppressValue" min="0" max="100" value="40" aria-label="孤立雜點抑制數值"></div>
                                 </div>
                             </div>
 
@@ -1172,6 +1239,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                 </div>
 
             </main>
+            </div>
         </div>
     </div>
 
@@ -1278,7 +1346,9 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         // 這裡的寬度守衛只是保護 cookie 還原時（上次在桌面設成 fluid、這次用手機開頁面）的邊界情況。
         if (window.innerWidth >= 1024) {
             if (isFluid) {
-                document.getElementById('main-content').scrollIntoView({ block: 'start' });
+                // 捲到 #mainAnchor（分隔線＋main 的外層）而不是 main 本身，
+                // 這樣分隔線會露在畫面最上緣，專案操作列才不會直接貼死在視窗頂端。
+                document.getElementById('mainAnchor').scrollIntoView({ block: 'start' });
             } else {
                 window.scrollTo({ top: 0 });
             }
