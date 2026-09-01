@@ -1,7 +1,12 @@
 // 右側「即時預覽」與 PNG 匯出共用的純渲染管線：renderPiece() 從原始掃描位元組出發，
-// 依序套用「裁切／套索遮罩 → 橡皮擦擦除 → 旋轉 → 去背 → 對比度/亮度增強」，
+// 依序套用「裁切／套索遮罩 → 橡皮擦擦除 → 旋轉 → 對比度/亮度增強 → 去背」，
 // 非破壞性——原始掃描位元組從不被修改，橡皮擦筆刷跟增強參數都只是存在 piece 上的資料，
 // 每次都是重新算過，不是疊加在前一次算完的像素上。
+// 增強放在去背「之前」：淡色筆跡（例如很淺的彩色筆）跟背景的顏色距離本來就小，
+// 拉對比度能把這個距離撐大，讓它跨過去背的顏色距離門檻被判定為前景——如果增強放在去背
+// 之後（只調整已經算完 alpha 的像素 RGB），選取範圍不會因此變大，淡色筆跡還是會被吃掉，
+// 使用者只會看到顏色被調整、內容沒有變多。背景取樣色也要套用同一套增強公式再拿去比對，
+// 否則「拉開的像素」跟「沒拉開的取樣色」基準點不一致，距離計算會失真。
 // 互動預覽限制在 maxPreviewDim 內以維持效能；匯出一律以完整原始解析度重新渲染，
 // 因此「預覽縮圖」與「最終輸出」不是同一份縮小過的資料。
 
@@ -113,19 +118,23 @@ export async function renderPiece(piece, opts = {}) {
     canvas = downscaleCanvas(canvas, opts.maxDim ?? maxPreviewDim);
     ctx = canvas.getContext('2d');
 
+    const hasEnhance = !!(piece.enhance?.contrast || piece.enhance?.brightness);
+    if (hasEnhance) {
+        applyEnhance(ctx, canvas, piece.enhance);
+    }
+
     if (piece.bgRemoval?.enabled) {
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const sampleColor = hasEnhance
+            ? enhanceColor(piece.bgRemoval.sampleColor, piece.enhance)
+            : piece.bgRemoval.sampleColor;
         const alphaData = estimateAlpha(
             imageData,
-            piece.bgRemoval.sampleColor,
+            sampleColor,
             piece.bgRemoval.threshold,
             piece.bgRemoval.softness
         );
         ctx.putImageData(alphaData, 0, 0);
-    }
-
-    if (piece.enhance?.contrast || piece.enhance?.brightness) {
-        applyEnhance(ctx, canvas, piece.enhance);
     }
 
     return canvas;
@@ -168,6 +177,14 @@ function clamp8(v) {
     return v < 0 ? 0 : v > 255 ? 255 : v | 0;
 }
 
+function contrastFactor(contrast) {
+    return (259 * (contrast + 255)) / (255 * (259 - contrast));
+}
+
+function enhanceChannel(value, factor, brightness) {
+    return clamp8(factor * (value - 128) + 128 + brightness);
+}
+
 // 標準對比度/亮度線性調整（僅動 RGB，alpha 不變）：對比度 -100~100 換算成縮放係數，
 // 以 128 為支點放大/縮小到中灰的距離；亮度 -100~100 是加法位移。全透明像素略過不算，
 // 省一點運算（去背後大面積透明邊界很常見）。
@@ -176,14 +193,26 @@ function applyEnhance(ctx, canvas, enhance) {
     const brightness = enhance?.brightness ?? 0;
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
-    const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+    const factor = contrastFactor(contrast);
     for (let i = 0; i < data.length; i += 4) {
         if (data[i + 3] === 0) continue;
-        data[i] = clamp8(factor * (data[i] - 128) + 128 + brightness);
-        data[i + 1] = clamp8(factor * (data[i + 1] - 128) + 128 + brightness);
-        data[i + 2] = clamp8(factor * (data[i + 2] - 128) + 128 + brightness);
+        data[i] = enhanceChannel(data[i], factor, brightness);
+        data[i + 1] = enhanceChannel(data[i + 1], factor, brightness);
+        data[i + 2] = enhanceChannel(data[i + 2], factor, brightness);
     }
     ctx.putImageData(imageData, 0, 0);
+}
+
+// 背景取樣色要套用跟像素同一套增強公式才能拿去算顏色距離，見上面 renderPiece 裡的說明。
+function enhanceColor(color, enhance) {
+    const contrast = enhance?.contrast ?? 0;
+    const brightness = enhance?.brightness ?? 0;
+    const factor = contrastFactor(contrast);
+    return {
+        r: enhanceChannel(color.r, factor, brightness),
+        g: enhanceChannel(color.g, factor, brightness),
+        b: enhanceChannel(color.b, factor, brightness),
+    };
 }
 
 /** 匯出一律以完整原始解析度重新渲染，不是把互動預覽的畫面截圖下來；並裁掉選取外框多餘的透明邊界。 */

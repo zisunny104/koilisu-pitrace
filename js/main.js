@@ -7,6 +7,7 @@ import { ThumbnailStrip } from './ui/thumbnails.js';
 import { wireUI } from './ui/toolbar.js';
 import { makeToolbarArrowNav } from './a11y.js';
 import { wireToolShortcuts } from './tools/shortcuts.js';
+import { initAutosave } from './autosave.js';
 
 const statusEl = document.getElementById('statusRegion');
 const scanView = new ScanView(document.getElementById('scanCanvas'), statusEl);
@@ -15,6 +16,7 @@ new ThumbnailStrip(document.getElementById('pieceList'), statusEl);
 
 wireUI({ scanView, statusEl });
 wireToolShortcuts(statusEl);
+initAutosave(statusEl);
 
 makeToolbarArrowNav(document.getElementById('projectToolbar'));
 makeToolbarArrowNav(document.querySelector('.canvas-floating-toolbar'));

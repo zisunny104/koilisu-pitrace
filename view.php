@@ -340,18 +340,21 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
     }
 
     /* 依目前工具切換游標樣式（見 scan-view.js 的 _updateCursorClass）：
-       套索加/減選用十字＋色塊角標（藍色＋／紅色－）辨識目前是加選還是減選；
+       矩形/套索共用一套修飾鍵游標——Shift 加選、Alt 減選都用十字＋色塊角標
+       （藍色＋／紅色－）辨識，純拖曳（無修飾鍵）則是純十字，代表會新建取代選取；
        橡皮擦改用 cursor:none，實際筆刷範圍改由 canvas 疊圖即時畫出（見 eraser.js drawOverlay），
-       因為 CSS 游標圖是螢幕固定尺寸，沒辦法反映縮放後筆刷實際涵蓋的影像範圍。 */
+       因為 CSS 游標圖是螢幕固定尺寸，沒辦法反映縮放後筆刷實際涵蓋的影像範圍；
+       平移游標（cursor-pan / is-pan-armed）也同時涵蓋滑鼠中鍵按住拖曳的情況（見 scan-view.js
+       _onPointerDown 的 evt.button === 1 分支）。 */
     #scanCanvas.cursor-crosshair {
         cursor: crosshair;
     }
 
-    #scanCanvas.cursor-lasso-add {
+    #scanCanvas.cursor-select-add {
         cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Cg stroke='%23000' stroke-width='3' stroke-linecap='round'%3E%3Cline x1='16' y1='3' x2='16' y2='12'/%3E%3Cline x1='16' y1='20' x2='16' y2='29'/%3E%3Cline x1='3' y1='16' x2='12' y2='16'/%3E%3Cline x1='20' y1='16' x2='29' y2='16'/%3E%3C/g%3E%3Cg stroke='%23fff' stroke-width='1.2' stroke-linecap='round'%3E%3Cline x1='16' y1='3' x2='16' y2='12'/%3E%3Cline x1='16' y1='20' x2='16' y2='29'/%3E%3Cline x1='3' y1='16' x2='12' y2='16'/%3E%3Cline x1='20' y1='16' x2='29' y2='16'/%3E%3C/g%3E%3Ccircle cx='24' cy='24' r='6.5' fill='%233b82f6' stroke='%23fff' stroke-width='1.5'/%3E%3Cline x1='24' y1='21.5' x2='24' y2='26.5' stroke='%23fff' stroke-width='1.6' stroke-linecap='round'/%3E%3Cline x1='21.5' y1='24' x2='26.5' y2='24' stroke='%23fff' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") 16 16, crosshair;
     }
 
-    #scanCanvas.cursor-lasso-subtract {
+    #scanCanvas.cursor-select-subtract {
         cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Cg stroke='%23000' stroke-width='3' stroke-linecap='round'%3E%3Cline x1='16' y1='3' x2='16' y2='12'/%3E%3Cline x1='16' y1='20' x2='16' y2='29'/%3E%3Cline x1='3' y1='16' x2='12' y2='16'/%3E%3Cline x1='20' y1='16' x2='29' y2='16'/%3E%3C/g%3E%3Cg stroke='%23fff' stroke-width='1.2' stroke-linecap='round'%3E%3Cline x1='16' y1='3' x2='16' y2='12'/%3E%3Cline x1='16' y1='20' x2='16' y2='29'/%3E%3Cline x1='3' y1='16' x2='12' y2='16'/%3E%3Cline x1='20' y1='16' x2='29' y2='16'/%3E%3C/g%3E%3Ccircle cx='24' cy='24' r='6.5' fill='%23ef4444' stroke='%23fff' stroke-width='1.5'/%3E%3Cline x1='21.5' y1='24' x2='26.5' y2='24' stroke='%23fff' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") 16 16, crosshair;
     }
 
@@ -376,7 +379,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         background: var(--ts-gray-100, #f2f2f2);
         border: 1px solid var(--ts-gray-300, #ddd);
         border-radius: 12px;
-        padding: 0.5rem 0.75rem;
+        padding: 0.35rem 0.4rem;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
     }
 
@@ -407,6 +410,37 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
        真的放不下就交給既有的橫向捲動，而不是換成兩行。 */
     .canvas-floating-toolbar.pane-toolbar {
         flex-wrap: nowrap;
+    }
+
+    /* Tocas .ts-selection.is-compact 每顆選項的 .text 內距是給文字按鈕留的（左右各 15px），
+       這裡放的是純圖示（文字靠 has-hidden 視覺隱藏），沿用文字按鈕的內距讓圖示浮在一大片
+       空白中。另外 .item 本身的高度是自己算出來的（圖示+內距），比 .ts-selection 用來排列
+       整列的 --height（Tocas 緊湊尺寸的列高，跟旁邊縮放按鈕共用同一個值）矮一截，垂直置中
+       之下上下就多出說不出所以然的留白。改用固定寬高＝--height（跟縮放的正方形圖示按鈕
+       對齊）取代內距，撐滿列高、拿掉多餘空白，並靠 icon 自己 flex 置中；.ts-selection 自己
+       的內距也歸零（外層 .canvas-floating-toolbar 已經給過一次間距，不需要疊兩層），改用
+       gap 讓按鈕之間保留呼吸空間，不會因為拿掉內距而彼此貼死。 */
+    .canvas-floating-toolbar .ts-selection.is-compact {
+        padding-left: 0;
+        padding-right: 0;
+        gap: 0.3rem;
+    }
+
+    .canvas-floating-toolbar .ts-selection.is-compact .item {
+        height: 100%;
+    }
+
+    .canvas-floating-toolbar .ts-selection.is-compact .item .text {
+        width: var(--height);
+        height: 100%;
+        padding: 0;
+        justify-content: center;
+    }
+
+    /* 拿掉內距後按鈕本身有空間了，圖示卻還是沿用文字按鈕的預設字級（14px），在正方形按鈕裡
+       顯小。放大圖示字級，視覺份量才配得上按鈕本身的大小。 */
+    .canvas-floating-toolbar .ts-selection.is-compact .item .text .ts-icon {
+        font-size: 1.2rem;
     }
 
     /* #pieceList 沒有明確尺寸的父層可依附，不能沿用 .pane-empty-state 的絕對定位手法，
@@ -462,6 +496,39 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         border-radius: var(--ts-border-radius-secondary, 6px);
         white-space: nowrap;
         cursor: pointer;
+    }
+
+    /* 圖片清單下拉：每列是「切換使用中圖片」「重新命名」「刪除」三個各自獨立的可點擊目標，
+       不能整列包成一個 <button>（按鈕不能巢狀），改用 flex row 並排三顆按鈕。 */
+    .pane-scan-menu-row {
+        display: flex;
+        align-items: center;
+        gap: 0.2rem;
+    }
+
+    .pane-scan-menu-row .item {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .pane-scan-menu-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* 重新命名時整列換成的輸入框，寬度跟 select 按鈕的可用空間一致，避免切換時選單忽寬忽窄。 */
+    .pane-scan-menu-rename-input {
+        flex: 1 1 auto;
+        min-width: 0;
+        width: 100%;
+    }
+
+    #btnImportImageLabel {
+        max-width: 12rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     /* Tocas 的 .ts-selection 用 display:none 藏原生 radio、且完全沒有 focus-visible 樣式，
@@ -682,7 +749,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                         匯入圖片，去背、校正、匯出透明 PNG，全程本機處理不上傳。
                     </div>
                 </div>
-                <div class="column mobile:has-hidden tablet:has-hidden desktop:has-hidden">
+                <div class="column mobile:has-hidden">
                     <button id="btnToggleWidth" class="ts-button is-icon is-outlined" aria-label="使用完整頁面寬度"
                         title="使用完整頁面寬度" aria-pressed="false">
                         <span class="ts-icon is-arrows-left-right-icon" aria-hidden="true"></span>
@@ -704,22 +771,23 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                         </div>
                         <div class="column">
                             <div class="pane-toolbar-buttons">
-                                <button id="btnImportImage" class="ts-button is-primary is-start-icon">
-                                    <span class="ts-icon is-upload-icon" aria-hidden="true"></span>
-                                    匯入圖片
-                                </button>
+                                <div class="pane-menu-wrap">
+                                    <button id="btnImportImage" class="ts-button is-primary is-start-icon">
+                                        <span class="ts-icon is-upload-icon" aria-hidden="true"></span>
+                                        <span id="btnImportImageLabel">匯入圖片</span>
+                                        <span class="ts-icon is-chevron-down-icon" id="btnImportImageChevron"
+                                            aria-hidden="true" hidden></span>
+                                    </button>
+                                    <!-- 匯入前是單純的「匯入圖片」按鈕；有圖片後變成下拉選單：清單本身（切換圖片）
+                                         是較常用的操作放上面，「匯入圖片」放最下面、用分隔線隔開。 -->
+                                    <div class="ts-menu pane-dropdown-menu" id="scanMenu" role="menu"
+                                        aria-label="圖片清單" hidden>
+                                        <!-- 動態生成 -->
+                                    </div>
+                                </div>
                                 <button class="ts-button is-outlined is-end-icon" data-dropdown="projectMenuDropdown">
                                     專案
                                     <span class="ts-icon is-chevron-down-icon" aria-hidden="true"></span>
-                                </button>
-                            </div>
-                            <div class="pane-toolbar-buttons" id="scanSelectWrap" style="display:none;">
-                                <div class="ts-select" id="scanSelectInnerWrap" style="display:none;">
-                                    <select id="scanSelect" aria-label="切換圖片"></select>
-                                </div>
-                                <button id="btnRemoveScan" class="ts-button is-icon is-small is-negative"
-                                    aria-label="移除目前圖片" title="移除目前圖片">
-                                    <span class="ts-icon is-trash-icon" aria-hidden="true"></span>
                                 </button>
                             </div>
                         </div>
@@ -1004,6 +1072,9 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                             <div class="ts-header is-start-icon">
                                 <span class="ts-icon is-sun-icon" aria-hidden="true"></span>
                                 影像增強
+                            </div>
+                            <div class="ts-text is-description has-top-spaced-small">
+                                會在去背景之前套用，淡色筆跡因此也能被拉開跟背景的顏色距離、跨過去背門檻被保留下來，不是只調整顏色。
                             </div>
 
                             <div class="has-top-spaced-small">

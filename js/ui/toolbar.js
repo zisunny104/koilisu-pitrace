@@ -8,9 +8,46 @@ import { serializeProject, parseProjectZip } from '../pitra-format.js';
 import { zipWrite } from '../pitra-zip.js';
 import { sampleBorderColor } from '../processing/bg-remove.js';
 import { announce } from '../a11y.js';
+import { clearSnapshot } from '../autosave.js';
 
 function el(id) {
     return document.getElementById(id);
+}
+
+function makeIcon(cls) {
+    const span = document.createElement('span');
+    span.className = `ts-icon ${cls}`;
+    span.setAttribute('aria-hidden', 'true');
+    return span;
+}
+
+// 共用下拉選單開關邏輯（觸發鈕 + 選單容器）：點外面關閉、Esc 關閉並把焦點還給觸發鈕。
+// 「匯出全部」「圖片清單」兩個下拉選單共用同一套互動；觸發鈕本身的 click 行為由呼叫端自訂
+// （圖片清單那顆鈕在還沒有圖片時，click 要直接開檔案選取器，不能無條件切換選單開關）。
+function wireDropdownToggle(trigger, menu) {
+    function close() {
+        menu.hidden = true;
+        trigger.setAttribute('aria-expanded', 'false');
+    }
+    function open() {
+        menu.hidden = false;
+        trigger.setAttribute('aria-expanded', 'true');
+    }
+    function toggle() {
+        if (menu.hidden) open(); else close();
+    }
+    document.addEventListener('click', (evt) => {
+        if (!menu.hidden && evt.target !== trigger && !menu.contains(evt.target) && !trigger.contains(evt.target)) {
+            close();
+        }
+    });
+    document.addEventListener('keydown', (evt) => {
+        if (evt.key === 'Escape' && !menu.hidden) {
+            close();
+            trigger.focus();
+        }
+    });
+    return { open, close, toggle };
 }
 
 // 讓 range 滑桿與旁邊的數字輸入框互相同步：拖曳滑桿即時反映到數字框，
@@ -172,43 +209,23 @@ function wirePreviewBackground() {
     apply(matched ? stored : 'checker');
 }
 
-function wireProjectToolbar(statusEl) {
-    const projectNameInput = el('projectNameInput');
-    const scanSelectWrap = el('scanSelectWrap');
-    const scanSelectInnerWrap = el('scanSelectInnerWrap');
-    const scanSelect = el('scanSelect');
-    const btnRemoveScan = el('btnRemoveScan');
+// 「匯入圖片」按鈕：還沒有圖片時是單純的匯入按鈕；有圖片後變成下拉選單（觸發鈕顯示目前
+// 使用中的圖片檔名），選單裡每張圖片一列（點列＝切換使用中圖片，鉛筆＝重新命名，垃圾桶＝刪除），
+// 最下面用分隔線隔開放「匯入圖片」——清單（切換圖片）是較常用的操作放上面，新增放最後，
+// 跟大多數檔案選單「先看現有項目、新增放最後」的慣例一致。
+// 原本是「匯入圖片」按鈕 + 獨立的圖片下拉選單/移除鈕兩組並排，有圖片後兩組同時顯示，
+// 在 .pane-toolbar-buttons 裡疊成兩行擠壓版面；合併成一顆下拉選單後版面固定只有一行。
+function wireScanMenu(statusEl) {
+    const btnImportImage = el('btnImportImage');
+    const btnImportImageLabel = el('btnImportImageLabel');
+    const btnImportImageChevron = el('btnImportImageChevron');
+    const scanMenu = el('scanMenu');
+    const fileImportImage = el('fileImportImage');
 
-    projectNameInput.addEventListener('change', () => {
-        store.project.name = projectNameInput.value.trim() || '未命名專案';
-    });
+    const menuToggle = wireDropdownToggle(btnImportImage, scanMenu);
+    let renamingScanId = null; // 正在編輯檔名的圖片；渲染時該列換成輸入框，其餘照舊
 
-    function syncScanSelect() {
-        const scans = store.project.scans;
-        scanSelect.innerHTML = '';
-        for (const scan of scans) {
-            const opt = document.createElement('option');
-            opt.value = scan.id;
-            opt.textContent = scan.filename;
-            scanSelect.appendChild(opt);
-        }
-        scanSelect.value = store.activeScanId ?? '';
-        // 下拉選單只有多張圖片時才需要切換；移除按鈕只要有目前使用中的圖片就該在，
-        // 就算專案只有一張掃描圖，使用者也該能把它移除以釋放記憶體。
-        scanSelectInnerWrap.style.display = scans.length > 1 ? '' : 'none';
-        scanSelectWrap.style.display = scans.length > 0 ? '' : 'none';
-    }
-
-    scanSelect.addEventListener('change', () => store.setActiveScan(scanSelect.value));
-    store.addEventListener('project-changed', syncScanSelect);
-    store.addEventListener('scan-changed', () => {
-        scanSelect.value = store.activeScanId ?? '';
-    });
-    syncScanSelect();
-
-    btnRemoveScan.addEventListener('click', () => {
-        const scan = store.getActiveScan();
-        if (!scan) return;
+    function removeScanWithConfirm(scan) {
         const affected = store.project.pieces.filter((p) => p.scanId === scan.id).length;
         const warning = affected > 0
             ? `確定要移除圖片「${scan.filename}」？將一併刪除 ${affected} 個引用此圖片的物件，此操作無法復原。`
@@ -216,12 +233,179 @@ function wireProjectToolbar(statusEl) {
         if (!window.confirm(warning)) return;
         store.removeScan(scan.id);
         announce(statusEl, `已移除圖片 ${scan.filename}`);
+    }
+
+    function renderScanMenu() {
+        const scans = store.project.scans;
+        scanMenu.innerHTML = '';
+        for (const scan of scans) {
+            const row = document.createElement('div');
+            row.className = 'pane-scan-menu-row';
+
+            if (renamingScanId === scan.id) {
+                // 輸入框不能長在 selectBtn（<button>）裡面——button 的內容模型不允許互動元素巢狀，
+                // 所以編輯中整列直接換成獨立的輸入框，不重用 selectBtn 結構。
+                // Tocas 的 .ts-input 是外層 wrapper div、實際 <input> 不帶 class，跟 projectNameInput/
+                // pieceNameInput 兩處既有寫法一致。
+                const inputWrap = document.createElement('div');
+                inputWrap.className = 'ts-input is-fluid pane-scan-menu-rename-input';
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = scan.filename;
+                input.setAttribute('aria-label', `重新命名圖片「${scan.filename}」`);
+                let escaped = false;
+                function commit() {
+                    if (escaped) return;
+                    const trimmed = input.value.trim();
+                    renamingScanId = null;
+                    if (trimmed && trimmed !== scan.filename) {
+                        store.renameScan(scan.id, trimmed);
+                        announce(statusEl, `已將圖片重新命名為「${trimmed}」`);
+                    } else {
+                        renderScanMenu();
+                    }
+                }
+                input.addEventListener('keydown', (evt) => {
+                    if (evt.key === 'Enter') {
+                        evt.preventDefault();
+                        input.blur();
+                    } else if (evt.key === 'Escape') {
+                        evt.preventDefault();
+                        evt.stopPropagation();
+                        escaped = true;
+                        renamingScanId = null;
+                        renderScanMenu();
+                    }
+                });
+                input.addEventListener('blur', commit);
+                input.addEventListener('click', (evt) => evt.stopPropagation());
+                inputWrap.appendChild(input);
+                row.appendChild(inputWrap);
+                scanMenu.appendChild(row);
+                requestAnimationFrame(() => {
+                    input.focus();
+                    input.select();
+                });
+                continue;
+            }
+
+            const isActive = scan.id === store.activeScanId;
+            const selectBtn = document.createElement('button');
+            selectBtn.type = 'button';
+            selectBtn.className = 'item';
+            selectBtn.setAttribute('role', 'menuitemradio');
+            selectBtn.setAttribute('aria-checked', String(isActive));
+            selectBtn.title = scan.filename;
+            selectBtn.appendChild(makeIcon(isActive ? 'is-check-icon' : 'is-image-icon'));
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'pane-scan-menu-name';
+            nameSpan.textContent = scan.filename;
+            selectBtn.appendChild(nameSpan);
+            selectBtn.addEventListener('click', () => {
+                store.setActiveScan(scan.id);
+                menuToggle.close();
+            });
+
+            const renameBtn = document.createElement('button');
+            renameBtn.type = 'button';
+            renameBtn.className = 'ts-button is-icon is-small is-ghost';
+            renameBtn.setAttribute('aria-label', `重新命名「${scan.filename}」`);
+            renameBtn.title = '重新命名';
+            renameBtn.appendChild(makeIcon('is-edit-icon'));
+            renameBtn.addEventListener('click', (evt) => {
+                evt.stopPropagation();
+                renamingScanId = scan.id;
+                renderScanMenu();
+            });
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.type = 'button';
+            deleteBtn.className = 'ts-button is-icon is-small is-negative is-ghost';
+            deleteBtn.setAttribute('aria-label', `移除「${scan.filename}」`);
+            deleteBtn.title = '移除圖片';
+            deleteBtn.appendChild(makeIcon('is-trash-icon'));
+            deleteBtn.addEventListener('click', (evt) => {
+                evt.stopPropagation();
+                removeScanWithConfirm(scan);
+            });
+
+            row.append(selectBtn, renameBtn, deleteBtn);
+            scanMenu.appendChild(row);
+        }
+
+        if (scans.length > 0) {
+            const divider = document.createElement('div');
+            divider.className = 'divider';
+            scanMenu.appendChild(divider);
+        }
+
+        const importItem = document.createElement('button');
+        importItem.type = 'button';
+        importItem.className = 'item';
+        importItem.setAttribute('role', 'menuitem');
+        importItem.appendChild(makeIcon('is-upload-icon'));
+        const importLabel = document.createElement('span');
+        importLabel.textContent = '匯入圖片';
+        importItem.appendChild(importLabel);
+        importItem.addEventListener('click', () => {
+            menuToggle.close();
+            fileImportImage.click();
+        });
+        scanMenu.appendChild(importItem);
+    }
+
+    function syncTrigger() {
+        const scans = store.project.scans;
+        if (scans.length === 0) {
+            btnImportImageLabel.textContent = '匯入圖片';
+            btnImportImageChevron.hidden = true;
+            btnImportImage.removeAttribute('title');
+            // 沒有圖片時點下去是直接開檔案選擇窗，不是開選單，aria-haspopup/aria-expanded
+            // 這兩個「這顆按鈕會開選單」的語意屬性拿掉，螢幕報讀器才不會報成選單按鈕。
+            btnImportImage.removeAttribute('aria-haspopup');
+            btnImportImage.removeAttribute('aria-expanded');
+        } else {
+            const active = store.getActiveScan();
+            btnImportImageLabel.textContent = active ? active.filename : `${scans.length} 張圖片`;
+            btnImportImageChevron.hidden = false;
+            btnImportImage.title = active ? active.filename : '';
+            btnImportImage.setAttribute('aria-haspopup', 'menu');
+            btnImportImage.setAttribute('aria-expanded', String(!scanMenu.hidden));
+        }
+    }
+
+    function syncScanUI() {
+        syncTrigger();
+        renderScanMenu();
+    }
+
+    btnImportImage.addEventListener('click', () => {
+        if (store.project.scans.length === 0) {
+            fileImportImage.click();
+            return;
+        }
+        menuToggle.toggle();
     });
+
+    store.addEventListener('project-changed', syncScanUI);
+    store.addEventListener('scan-changed', syncScanUI);
+    syncScanUI();
+}
+
+function wireProjectToolbar(statusEl) {
+    const projectNameInput = el('projectNameInput');
+
+    projectNameInput.addEventListener('change', () => {
+        store.project.name = projectNameInput.value.trim() || '未命名專案';
+    });
+
+    wireScanMenu(statusEl);
 
     el('btnNewProject').addEventListener('click', () => {
         const hasContent = store.project.scans.length > 0 || store.project.pieces.length > 0;
         if (hasContent && !window.confirm('目前的專案尚未匯出，確定要新增專案並捨棄目前內容？')) return;
         store.setProject(createEmptyProject());
+        clearSnapshot(); // 使用者已經明確同意捨棄，連同自動儲存的快照一起清掉，避免下次重新整理又被問一次要不要復原舊內容
         projectNameInput.value = '未命名專案';
         announce(statusEl, '已新增專案');
     });
@@ -263,7 +447,9 @@ function wireProjectToolbar(statusEl) {
 
     const fileImportImage = el('fileImportImage');
     const btnImportImage = el('btnImportImage');
-    btnImportImage.addEventListener('click', () => fileImportImage.click());
+    // btnImportImage 的 click 監聽已經在 wireScanMenu 裡處理（沒圖片直接開檔案選擇窗、
+    // 有圖片改開下拉選單）；這裡不能再重複掛一個無條件開檔案選擇窗的 click，
+    // 不然有圖片時點下去選單跟檔案選擇窗會同時彈出。
     fileImportImage.addEventListener('change', async (evt) => {
         const files = Array.from(evt.target.files || []);
         evt.target.value = '';
@@ -491,28 +677,8 @@ function wireExportAllMenu(statusEl) {
     const menu = el('exportAllMenu');
     if (!trigger || !menu) return;
 
-    function close() {
-        menu.hidden = true;
-        trigger.setAttribute('aria-expanded', 'false');
-    }
-    function open() {
-        menu.hidden = false;
-        trigger.setAttribute('aria-expanded', 'true');
-    }
-    trigger.addEventListener('click', () => {
-        if (menu.hidden) open(); else close();
-    });
-    document.addEventListener('click', (evt) => {
-        if (!menu.hidden && evt.target !== trigger && !menu.contains(evt.target) && !trigger.contains(evt.target)) {
-            close();
-        }
-    });
-    document.addEventListener('keydown', (evt) => {
-        if (evt.key === 'Escape' && !menu.hidden) {
-            close();
-            trigger.focus();
-        }
-    });
+    const { close, toggle } = wireDropdownToggle(trigger, menu);
+    trigger.addEventListener('click', toggle);
 
     async function runAndClose(kinds) {
         close();

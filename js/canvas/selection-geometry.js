@@ -8,6 +8,27 @@
 import { buildSelectionMask } from './selection-mask.js';
 import { traceAlphaContours } from '../processing/vectorize.js';
 
+// 矩形只是四個節點的特例：矩形選取要跟套索的 loops 一起做加/減選合成時，
+// 先轉成這種四節點 loop 當底，而不是讓 rect/lasso 兩種選取資料格式各自為政。
+export function rectToLoop(rect) {
+    return {
+        path: [
+            { x: rect.x, y: rect.y },
+            { x: rect.x + rect.w, y: rect.y },
+            { x: rect.x + rect.w, y: rect.y + rect.h },
+            { x: rect.x, y: rect.y + rect.h },
+        ],
+        closed: true,
+        mode: 'add',
+    };
+}
+
+export function loopsFromSelection(selection) {
+    if (selection.type === 'lasso') return selection.loops ?? [];
+    if (selection.type === 'rect' && selection.rect) return [rectToLoop(selection.rect)];
+    return [];
+}
+
 // loops 陣列本身的參考當快取 key：store 每次改選取都會換一個新陣列，參考沒變就不用重算，
 // 拖曳畫布觸發的多次 draw() 才不會每畫一次就重新點陣化＋描邊一次。
 const outlineCache = new WeakMap();

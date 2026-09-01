@@ -1,44 +1,28 @@
-// 套索工具：滑鼠拖曳畫出一個封閉區塊，放開即提交；同一物件可重複拖曳疊加多個區塊（複合路徑）。
-// Adobe 式明確加/減選：預設拖曳＝加選，按住 Alt 拖曳＝減選；每個 loop 帶著 mode 標籤，
-// 渲染端（scan-view.js / preview-pane.js）依 mode 逐一合成，不是靠位置重疊的奇偶規則。
+// 套索工具：滑鼠拖曳畫出一個封閉區塊，放開即提交。跟矩形選取工具統一 Photoshop 式修飾鍵
+// 語意：純拖曳＝新建（取代既有選取）、Shift+拖曳＝加選、Alt+拖曳＝減選；每個 loop 帶著
+// mode 標籤，渲染端（scan-view.js / preview-pane.js）依 mode 逐一合成，不是靠位置重疊的
+// 奇偶規則。rectToLoop/loopsFromSelection 共用邏輯搬到 selection-geometry.js，讓矩形工具
+// 也能用同一套轉換做加/減選。
 
 import { store } from '../state.js';
+import { loopsFromSelection } from '../canvas/selection-geometry.js';
 
 const MIN_POINT_DISTANCE = 3; // image px，避免快速拖曳塞爆點陣列
-
-// 矩形只是四個節點的特例：切到套索工具實際開始編輯時，把既有的矩形選取轉成一個
-// 四節點 loop 當底，而不是直接丟棄——矩形選取不應該因為換成套索工具就憑空消失。
-function rectToLoop(rect) {
-    return {
-        path: [
-            { x: rect.x, y: rect.y },
-            { x: rect.x + rect.w, y: rect.y },
-            { x: rect.x + rect.w, y: rect.y + rect.h },
-            { x: rect.x, y: rect.y + rect.h },
-        ],
-        closed: true,
-        mode: 'add',
-    };
-}
-
-function loopsFromSelection(selection) {
-    if (selection.type === 'lasso') return selection.loops ?? [];
-    if (selection.type === 'rect' && selection.rect) return [rectToLoop(selection.rect)];
-    return [];
-}
 
 export class LassoTool {
     constructor() {
         this.draft = null;
-        this.draftMode = 'add';
+        this.draftMode = 'new';
     }
 
     onPointerDown(imgPt, evt, view) {
         const piece = store.getActivePiece();
         if (!piece) return view.announce('請先選取物件');
         const existingLoops = loopsFromSelection(piece.selection);
-        // 物件還沒有任何區塊時無法做減選，第一圈一律強制加選，不管當下是否按著 Alt。
-        this.draftMode = existingLoops.length === 0 || !evt.altKey ? 'add' : 'subtract';
+        // 完全沒有既有選取時修飾鍵無意義，一律當新建。修飾鍵狀態在拖曳開始時就決定好，
+        // 中途放開不會回頭改變 draftMode（拖曳中途游標移出畫布可能漏接 keyup，若中途重新
+        // 判斷會導致行為跳變）。
+        this.draftMode = existingLoops.length === 0 ? 'new' : evt.shiftKey ? 'add' : evt.altKey ? 'subtract' : 'new';
         this.draft = [{ x: Math.round(imgPt.x), y: Math.round(imgPt.y) }];
         view.draw();
     }
@@ -57,13 +41,14 @@ export class LassoTool {
         if (!this.draft) return;
         const piece = store.getActivePiece();
         const draft = this.draft;
+        const mode = this.draftMode;
         this.draft = null;
         if (piece && draft.length >= 3) {
-            const loops = loopsFromSelection(piece.selection);
-            const nextLoops = [...loops, { path: draft, closed: true, mode: this.draftMode }];
+            const existingLoops = mode === 'new' ? [] : loopsFromSelection(piece.selection);
+            const nextLoops = [...existingLoops, { path: draft, closed: true, mode: mode === 'subtract' ? 'subtract' : 'add' }];
             store.updatePiece(piece.id, { selection: { type: 'lasso', loops: nextLoops } });
-            const modeLabel = this.draftMode === 'subtract' ? '減選' : '加選';
-            view.announce(`已新增套索區塊（${modeLabel}），目前共 ${nextLoops.length} 個區塊`);
+            const modeLabel = mode === 'subtract' ? '減選' : mode === 'add' ? '加選' : '新選取';
+            view.announce(`已${modeLabel}套索區塊，目前共 ${nextLoops.length} 個區塊`);
         }
         view.draw();
     }

@@ -7,6 +7,10 @@ function makeId(prefix) {
     return `${prefix}_${Date.now().toString(36)}_${counter.toString(36)}`;
 }
 
+function stripExtension(filename) {
+    return filename.replace(/\.[^.]+$/, '');
+}
+
 export function createEmptyProject(name = '未命名專案') {
     return {
         schema: 1,
@@ -188,6 +192,16 @@ class Store extends EventTarget {
         return scan;
     }
 
+    // 重新命名掃描圖片：只改顯示用檔名，不動 bytes/mime。已存在的物件名稱是建立當下就
+    // 定型的字串（跟專案名稱一樣不會事後跟著來源改名），這裡只影響之後用這張圖新增物件時的預設前綴。
+    renameScan(scanId, filename) {
+        const scan = this.project.scans.find((s) => s.id === scanId);
+        if (!scan) return;
+        scan.filename = filename;
+        this.emit('project-changed', {});
+        this.emit('scan-changed', { scanId });
+    }
+
     // 移除掃描圖片：連同引用它的物件一起刪除（物件離了來源圖片沒有意義），並釋放原始位元組
     // 與已解碼快取。跟「新增專案」一樣不可復原——若讓 undo 復活出指向已刪除圖片的物件，
     // renderPiece 只會拿到 null，是比不能復原更糟的半殘狀態，所以直接清空歷史紀錄。
@@ -261,9 +275,12 @@ class Store extends EventTarget {
 
     addPiece(scanId, overrides = {}) {
         this._pushHistoryStep();
+        // 物件預設名稱＝來源圖片檔名_流水號，而非專案名稱：一個專案常有多張掃描圖，
+        // 用圖片檔名當前綴才看得出這個物件是切自哪一張，專案名稱在這裡沒有辨識度。
         // 流水號取現有物件中最大的同前綴編號 +1，而非單純用陣列長度，
         // 避免刪除中間的物件後，新物件的預設名稱跟留下來的物件撞名。
-        const prefix = `${this.project.name || '未命名專案'}_`;
+        const scan = this.project.scans.find((s) => s.id === scanId);
+        const prefix = `${scan ? stripExtension(scan.filename) : '未命名物件'}_`;
         let maxSeq = 0;
         for (const p of this.project.pieces) {
             if (!p.name || !p.name.startsWith(prefix)) continue;

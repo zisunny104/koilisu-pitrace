@@ -40,10 +40,11 @@ const TOOL_FACTORIES = {
     eraser: () => new EraserTool(),
 };
 
-// 依目前工具（+套索的 Alt 加/減選狀態）決定畫布游標樣式，class 對應到 view.php 的 CSS。
-// 橡皮擦不在這裡處理：它改用 cursor:none + drawOverlay 畫出實際縮放比例下的筆刷圓圈，
-// 因為 CSS cursor 圖片是螢幕固定尺寸，沒辦法反映「這個半徑在目前縮放下涵蓋多少影像範圍」。
-const CURSOR_CLASSES = ['cursor-crosshair', 'cursor-lasso-add', 'cursor-lasso-subtract', 'cursor-eraser', 'cursor-pan'];
+// 依目前工具（+矩形/套索共用的 Shift 加選／Alt 減選狀態）決定畫布游標樣式，class 對應到
+// view.php 的 CSS。橡皮擦不在這裡處理：它改用 cursor:none + drawOverlay 畫出實際縮放比例下
+// 的筆刷圓圈，因為 CSS cursor 圖片是螢幕固定尺寸，沒辦法反映「這個半徑在目前縮放下涵蓋多少
+// 影像範圍」。
+const CURSOR_CLASSES = ['cursor-crosshair', 'cursor-select-add', 'cursor-select-subtract', 'cursor-eraser', 'cursor-pan'];
 
 export class ScanView {
     constructor(canvas, statusEl, onZoomChange) {
@@ -63,7 +64,9 @@ export class ScanView {
         this._panStart = null;
         this._spaceHeld = false;
         this._spacePendingRelease = false;
+        this._middlePanActive = false;
         this._altHeld = false;
+        this._shiftHeld = false;
         this._rafId = null;
 
         canvas.addEventListener('pointerdown', (e) => this._onPointerDown(e));
@@ -83,15 +86,23 @@ export class ScanView {
                 this._altHeld = false;
                 this._updateCursorClass();
             }
+            if (this._shiftHeld) {
+                this._shiftHeld = false;
+                this._updateCursorClass();
+            }
         });
         canvas.addEventListener('wheel', (e) => this._onWheel(e), { passive: false });
-        // Alt 是套索加/減選的切換鍵，游標要即時反映——但套索拖曳中途放開 Alt 不會改變已經
-        // 決定好的 draftMode（見 LassoTool.onPointerDown 的註解），所以這裡只更新游標樣式，
-        // 不影響 LassoTool 自己的加/減選判斷。用 window 監聽而非 canvas，避免拖曳時焦點
-        // 不在畫布上導致漏接 keyup、游標卡在錯誤狀態。
+        // Shift/Alt 是矩形/套索加選／減選的切換鍵，游標要即時反映——但拖曳中途放開不會改變
+        // 已經決定好的 draftMode（見 LassoTool/RectSelectTool.onPointerDown 的註解），所以這裡
+        // 只更新游標樣式，不影響工具自己的加/減選判斷。用 window 監聽而非 canvas，避免拖曳時
+        // 焦點不在畫布上導致漏接 keyup、游標卡在錯誤狀態。
         window.addEventListener('keydown', (e) => {
             if (e.key === 'Alt' && !this._altHeld) {
                 this._altHeld = true;
+                this._updateCursorClass();
+            }
+            if (e.key === 'Shift' && !this._shiftHeld) {
+                this._shiftHeld = true;
                 this._updateCursorClass();
             }
         });
@@ -100,10 +111,18 @@ export class ScanView {
                 this._altHeld = false;
                 this._updateCursorClass();
             }
+            if (e.key === 'Shift' && this._shiftHeld) {
+                this._shiftHeld = false;
+                this._updateCursorClass();
+            }
         });
         window.addEventListener('blur', () => {
             if (this._altHeld) {
                 this._altHeld = false;
+                this._updateCursorClass();
+            }
+            if (this._shiftHeld) {
+                this._shiftHeld = false;
                 this._updateCursorClass();
             }
         });
@@ -131,10 +150,13 @@ export class ScanView {
 
     _updateCursorClass() {
         this.canvas.classList.remove(...CURSOR_CLASSES);
-        if (this._spaceHeld) return; // is-pan-armed 已經處理（見 _onKeyDown/_onKeyUp）
+        if (this._spaceHeld || this._middlePanActive) return; // is-pan-armed 已經處理（見 _onKeyDown/_onKeyUp/中鍵處理）
         switch (this._activeToolName) {
+            case 'rect':
             case 'lasso':
-                this.canvas.classList.add(this._altHeld ? 'cursor-lasso-subtract' : 'cursor-lasso-add');
+                if (this._shiftHeld) this.canvas.classList.add('cursor-select-add');
+                else if (this._altHeld) this.canvas.classList.add('cursor-select-subtract');
+                else this.canvas.classList.add('cursor-crosshair');
                 break;
             case 'eraser':
                 this.canvas.classList.add('cursor-eraser');
@@ -153,7 +175,7 @@ export class ScanView {
     }
 
     _currentTool() {
-        if (this._spaceHeld) return (this._toolInstances.pan ??= TOOL_FACTORIES.pan());
+        if (this._spaceHeld || this._middlePanActive) return (this._toolInstances.pan ??= TOOL_FACTORIES.pan());
         const name = this._activeToolName;
         if (!this._toolInstances[name] && TOOL_FACTORIES[name]) {
             this._toolInstances[name] = TOOL_FACTORIES[name]();
@@ -235,18 +257,34 @@ export class ScanView {
         return { x: (cssX - this.tx) / this.scale, y: (cssY - this.ty) / this.scale };
     }
 
+    // 比照 Figma：滾輪＝平移（deltaX 水平／deltaY 垂直），按著 Ctrl/Cmd 才是縮放（以游標為
+    // 中心）——多數瀏覽器把觸控板雙指縮放手勢也轉譯成帶 ctrlKey 的 wheel 事件，這裡順便涵蓋。
     _onWheel(evt) {
         evt.preventDefault();
         if (!this.bitmap) return;
-        const rect = this.canvas.getBoundingClientRect();
-        const center = { x: evt.clientX - rect.left, y: evt.clientY - rect.top };
-        this.zoomBy(evt.deltaY < 0 ? 1.1 : 1 / 1.1, center);
+        if (evt.ctrlKey || evt.metaKey) {
+            const rect = this.canvas.getBoundingClientRect();
+            const center = { x: evt.clientX - rect.left, y: evt.clientY - rect.top };
+            this.zoomBy(evt.deltaY < 0 ? 1.1 : 1 / 1.1, center);
+            return;
+        }
+        this.tx -= evt.deltaX;
+        this.ty -= evt.deltaY;
+        this.draw();
     }
 
     _onPointerDown(evt) {
         this.canvas.focus();
         const imgPt = this.cssToImage(evt.clientX, evt.clientY);
         this.canvas.setPointerCapture(evt.pointerId);
+        // 比照 Figma：滑鼠中鍵不管目前是什麼工具，按住拖曳一律平移（放開瀏覽器預設的
+        // 自動捲動手勢，避免跟這裡的平移打架）。
+        if (evt.button === 1) {
+            evt.preventDefault();
+            this._middlePanActive = true;
+            this.canvas.classList.add('is-pan-armed');
+            this._updateCursorClass();
+        }
         this._currentTool()?.onPointerDown?.(imgPt, evt, this);
     }
 
@@ -258,6 +296,11 @@ export class ScanView {
     _onPointerUp(evt) {
         const imgPt = this.cssToImage(evt.clientX, evt.clientY);
         this._currentTool()?.onPointerUp?.(imgPt, evt, this);
+        if (evt.button === 1 && this._middlePanActive) {
+            this._middlePanActive = false;
+            this.canvas.classList.remove('is-pan-armed');
+            this._updateCursorClass();
+        }
         if (this._spacePendingRelease) {
             this._spaceHeld = false;
             this._spacePendingRelease = false;
@@ -385,25 +428,51 @@ export class ScanView {
                     ? (piece.selection.loops ?? []).filter((l) => l.closed && l.path.length > 2)
                     : [];
 
-            // 半透明遮罩：只蓋在「選取範圍以外」，讓保留區清楚可辨，被挖空的紙面則變暗。
+            // 半透明遮罩：選取範圍以外變暗，範圍以內疊一層同樣半透明的淡橘色——兩邊都看得到底圖，
+            // 只是亮暗、色調不同，一眼就能分辨「這是選取的這一側」，不會像純色塊那樣完全看不見底圖。
             if (isActive && this.bitmap) {
                 const hasClosedShape = (piece.selection.type === 'rect' && piece.selection.rect) || closedLoops.length > 0;
                 if (hasClosedShape) {
                     ctx.save();
+                    const tintColor = 'rgba(249,115,22,0.18)';
                     if (piece.selection.type === 'rect') {
                         const r = piece.selection.rect;
+                        // 拖曳選取可能超出圖片邊界（負座標或超寬超高)；挖洞跟疊色都只算跟圖片重疊的
+                        // 部分，不然 evenodd 挖洞在超出邊界處會反而被誤判成「只被算到一次」而填實色。
+                        const cx = Math.max(0, r.x);
+                        const cy = Math.max(0, r.y);
+                        const cw = Math.min(r.x + r.w, this.bitmap.width) - cx;
+                        const ch = Math.min(r.y + r.h, this.bitmap.height) - cy;
                         ctx.beginPath();
                         ctx.rect(0, 0, this.bitmap.width, this.bitmap.height);
-                        ctx.rect(r.x, r.y, r.w, r.h);
+                        if (cw > 0 && ch > 0) ctx.rect(cx, cy, cw, ch);
                         ctx.fillStyle = 'rgba(15,23,42,0.5)';
                         ctx.fill('evenodd');
+                        if (cw > 0 && ch > 0) {
+                            ctx.fillStyle = tintColor;
+                            ctx.fillRect(cx, cy, cw, ch);
+                        }
                     } else {
                         const mask = buildSelectionMask(closedLoops, this.bitmap.width, this.bitmap.height);
-                        ctx.fillStyle = 'rgba(15,23,42,0.5)';
-                        ctx.fillRect(0, 0, this.bitmap.width, this.bitmap.height);
-                        ctx.globalCompositeOperation = 'destination-out';
+
+                        // 變暗遮罩必須先在獨立的 offscreen canvas 疊好、挖好洞，才能整片貼回主畫布——
+                        // 不能直接對 ctx 用 destination-out，那樣會連同稍早畫上去的原圖一起擦除，
+                        // 選取範圍反而變成完全透空的洞（穿透看到畫布底色），而不是「顯示原圖」。
+                        const dimLayer = new OffscreenCanvas(this.bitmap.width, this.bitmap.height);
+                        const dimCtx = dimLayer.getContext('2d');
+                        dimCtx.fillStyle = 'rgba(15,23,42,0.5)';
+                        dimCtx.fillRect(0, 0, this.bitmap.width, this.bitmap.height);
+                        dimCtx.globalCompositeOperation = 'destination-out';
+                        dimCtx.drawImage(mask, 0, 0);
+                        ctx.drawImage(dimLayer, 0, 0);
+
+                        // mask 的黑色版本已經用完，直接原地換成半透明橘色再疊上去（source-in 一樣不能
+                        // 對主畫布做，要在 mask 自己的 offscreen canvas 上換色後才用 source-over 疊上來）。
+                        const maskCtx = mask.getContext('2d');
+                        maskCtx.globalCompositeOperation = 'source-in';
+                        maskCtx.fillStyle = tintColor;
+                        maskCtx.fillRect(0, 0, this.bitmap.width, this.bitmap.height);
                         ctx.drawImage(mask, 0, 0);
-                        ctx.globalCompositeOperation = 'source-over';
                     }
                     ctx.restore();
                 }
