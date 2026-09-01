@@ -13,19 +13,63 @@ export class ThumbnailStrip {
 
         store.addEventListener('project-changed', () => this.refresh());
         store.addEventListener('active-piece-changed', () => this.syncActive());
-        store.addEventListener('piece-changed', () => this.refresh());
+        store.addEventListener('piece-changed', (e) => this.refreshOne(e.detail.pieceId));
 
         this.refresh();
     }
 
-    // 只切換 aria-current，不重建 DOM：縮圖按鈕本身帶有 popovertarget，
-    // 若在點擊當下整批重建（innerHTML = ''），瀏覽器原生的 popover 開啟動作
-    // 會因為觸發按鈕被换成新節點、與文件斷開連結而默默失敗。
+    // 只切換 aria-current，不重建 DOM：避免點擊當下整批重建（innerHTML = ''）
+    // 造成縮圖閃爍、並讓剛點擊的按鈕失去焦點。
     syncActive() {
         const buttons = this.listEl.querySelectorAll('.piece-thumb');
         for (const btn of buttons) {
             btn.setAttribute('aria-current', btn.dataset.pieceId === store.activePieceId ? 'true' : 'false');
         }
+    }
+
+    // 單一物件變動（拖曳選取、旋轉、去背參數…）只重繪那一個縮圖，
+    // 不整批 innerHTML = '' 重建：物件數量多時，避免一次編輯觸發 N 個物件全部重新跑一次去背運算。
+    refreshOne(pieceId) {
+        const piece = store.project.pieces.find((p) => p.id === pieceId);
+        const btn = this.listEl.querySelector(`.piece-thumb[data-piece-id="${pieceId}"]`);
+        if (!piece || !btn) {
+            this.refresh();
+            return;
+        }
+
+        btn.setAttribute('aria-label', `物件：${piece.name}`);
+        const labelText = btn.querySelector('.thumb-label-text');
+        if (labelText) labelText.textContent = piece.name;
+        const dot = btn.querySelector('.thumb-color-dot');
+        if (dot) dot.style.backgroundColor = getPieceColor(piece);
+
+        const deleteBtn = btn.closest('.piece-thumb-item')?.querySelector('.piece-thumb-delete');
+        if (deleteBtn) {
+            deleteBtn.setAttribute('aria-label', `刪除物件 ${piece.name}`);
+            deleteBtn.title = '刪除物件';
+        }
+
+        const placeholder = document.createElement('div');
+        placeholder.className = 'thumb-placeholder';
+        const spinner = document.createElement('div');
+        spinner.className = 'ts-loading is-small is-centered';
+        placeholder.appendChild(spinner);
+        const oldVisual = btn.querySelector('canvas, .thumb-placeholder');
+        if (oldVisual) oldVisual.replaceWith(placeholder);
+        else btn.insertBefore(placeholder, btn.firstChild);
+
+        renderPiece(piece, { maxDim: thumbMaxDim }).then((rendered) => {
+            if (!placeholder.isConnected) return;
+            if (!rendered) {
+                spinner.remove();
+                return;
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = rendered.width;
+            canvas.height = rendered.height;
+            canvas.getContext('2d').drawImage(rendered, 0, 0);
+            placeholder.replaceWith(canvas);
+        });
     }
 
     refresh() {
@@ -55,7 +99,6 @@ export class ThumbnailStrip {
             btn.dataset.pieceId = piece.id;
             btn.setAttribute('aria-current', piece.id === store.activePieceId ? 'true' : 'false');
             btn.setAttribute('aria-label', `物件：${piece.name}`);
-            btn.setAttribute('popovertarget', 'propertiesPanel');
             btn.addEventListener('click', () => {
                 store.setActivePiece(piece.id);
                 announce(this.statusEl, `已選取物件 ${piece.name}`);

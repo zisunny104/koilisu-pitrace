@@ -23,7 +23,7 @@ export class RectSelectTool {
         const w = Math.abs(imgPt.x - this.dragStart.x);
         const h = Math.abs(imgPt.y - this.dragStart.y);
         this.draftRect = { x, y, w, h };
-        view.draw();
+        view.requestDraw();
     }
 
     onPointerUp(imgPt, evt, view) {

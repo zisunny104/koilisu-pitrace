@@ -6,6 +6,27 @@ import { store } from '../state.js';
 
 const MIN_POINT_DISTANCE = 3; // image px，避免快速拖曳塞爆點陣列
 
+// 矩形只是四個節點的特例：切到套索工具實際開始編輯時，把既有的矩形選取轉成一個
+// 四節點 loop 當底，而不是直接丟棄——矩形選取不應該因為換成套索工具就憑空消失。
+function rectToLoop(rect) {
+    return {
+        path: [
+            { x: rect.x, y: rect.y },
+            { x: rect.x + rect.w, y: rect.y },
+            { x: rect.x + rect.w, y: rect.y + rect.h },
+            { x: rect.x, y: rect.y + rect.h },
+        ],
+        closed: true,
+        mode: 'add',
+    };
+}
+
+function loopsFromSelection(selection) {
+    if (selection.type === 'lasso') return selection.loops ?? [];
+    if (selection.type === 'rect' && selection.rect) return [rectToLoop(selection.rect)];
+    return [];
+}
+
 export class LassoTool {
     constructor() {
         this.draft = null;
@@ -15,7 +36,7 @@ export class LassoTool {
     onPointerDown(imgPt, evt, view) {
         const piece = store.getActivePiece();
         if (!piece) return view.announce('請先選取物件');
-        const existingLoops = piece.selection.type === 'lasso' ? piece.selection.loops ?? [] : [];
+        const existingLoops = loopsFromSelection(piece.selection);
         // 物件還沒有任何區塊時無法做減選，第一圈一律強制加選，不管當下是否按著 Alt。
         this.draftMode = existingLoops.length === 0 || !evt.altKey ? 'add' : 'subtract';
         this.draft = [{ x: Math.round(imgPt.x), y: Math.round(imgPt.y) }];
@@ -29,7 +50,7 @@ export class LassoTool {
         const dy = imgPt.y - last.y;
         if (dx * dx + dy * dy < MIN_POINT_DISTANCE * MIN_POINT_DISTANCE) return;
         this.draft.push({ x: Math.round(imgPt.x), y: Math.round(imgPt.y) });
-        view.draw();
+        view.requestDraw();
     }
 
     onPointerUp(imgPt, evt, view) {
@@ -38,7 +59,7 @@ export class LassoTool {
         const draft = this.draft;
         this.draft = null;
         if (piece && draft.length >= 3) {
-            const loops = piece.selection.type === 'lasso' ? piece.selection.loops ?? [] : [];
+            const loops = loopsFromSelection(piece.selection);
             const nextLoops = [...loops, { path: draft, closed: true, mode: this.draftMode }];
             store.updatePiece(piece.id, { selection: { type: 'lasso', loops: nextLoops } });
             const modeLabel = this.draftMode === 'subtract' ? '減選' : '加選';

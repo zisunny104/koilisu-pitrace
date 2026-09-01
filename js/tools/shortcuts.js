@@ -1,10 +1,11 @@
-// 全域鍵盤快捷鍵：工具切換比照 Photoshop/Adobe 慣例（M 矩形、L 套索、H 平移、I 取樣背景色），
-// 並加上 Ctrl+Z 復原／Ctrl+Shift+Z（或 Ctrl+Y）重做。在文字輸入框中打字時忽略，避免搶走輸入焦點。
+// 全域鍵盤快捷鍵：工具切換比照 Photoshop/Adobe 慣例（M 矩形、L 套索、H 平移、I 取樣背景色、
+// E 橡皮擦），並加上 Ctrl+Z 復原／Ctrl+Shift+Z（或 Ctrl+Y）重做。在文字輸入框中打字時忽略，
+// 避免搶走輸入焦點。
 
 import { store } from '../state.js';
 import { announce } from '../a11y.js';
 
-const KEY_TOOL_MAP = { m: 'rect', l: 'lasso', h: 'pan', i: 'eyedropper' };
+const KEY_TOOL_MAP = { m: 'rect', l: 'lasso', h: 'pan', i: 'eyedropper', e: 'eraser' };
 
 function isTypingTarget(el) {
     if (!el) return false;

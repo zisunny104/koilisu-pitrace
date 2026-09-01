@@ -24,11 +24,21 @@ export function createPiece(scanId, overrides = {}) {
         name: '未命名物件',
         selection: { type: 'rect', rect: null, loops: [] },
         rotation: 0,
+        eraseStrokes: [],
+        eraseRadius: 40,
+        enhance: {
+            contrast: 0,
+            brightness: 0,
+        },
         bgRemoval: {
             enabled: true,
             sampleColor: { r: 255, g: 255, b: 255 },
             threshold: 40,
             softness: 24,
+        },
+        svgExport: {
+            enabled: false,
+            simplifyTolerance: 0.75,
         },
         ...overrides,
     };
@@ -48,6 +58,13 @@ export function getPieceColor(piece) {
 
 const HISTORY_LIMIT = 50;
 const HISTORY_COALESCE_MS = 500;
+// 防解壓縮炸彈：拒絕解碼後超過此像素量的圖片（約 7746x7746，600dpi A4/A3 掃描仍有餘裕），
+// 精心壓縮成小檔案、解碼後卻是數十億像素的惡意 PNG 會被擋下，避免分頁記憶體暴增當機。
+const MAX_SCAN_PIXELS = 60_000_000;
+// 同時最多快取幾張已解碼的 ImageBitmap（LRU，每張上限約 240MB＝60MP×4bytes）：
+// 專案掃描圖一多，全部解碼常駐會讓分頁記憶體隨掃描圖數量線性成長，
+// 超過此數就釋放最舊未使用的一張，下次要用再重新解碼。
+const MAX_CACHED_BITMAPS = 4;
 
 class Store extends EventTarget {
     constructor() {
@@ -150,7 +167,7 @@ class Store extends EventTarget {
     }
 
     setProject(project) {
-        this._bitmapCache.forEach((bmp) => bmp.close && bmp.close());
+        this._bitmapCache.forEach((bmp) => bmp?.close && bmp.close());
         this._bitmapCache.clear();
         this.project = project;
         this.activeScanId = project.scans[0]?.id ?? null;
@@ -171,21 +188,90 @@ class Store extends EventTarget {
         return scan;
     }
 
+    // 移除掃描圖片：連同引用它的物件一起刪除（物件離了來源圖片沒有意義），並釋放原始位元組
+    // 與已解碼快取。跟「新增專案」一樣不可復原——若讓 undo 復活出指向已刪除圖片的物件，
+    // renderPiece 只會拿到 null，是比不能復原更糟的半殘狀態，所以直接清空歷史紀錄。
+    removeScan(scanId) {
+        const idx = this.project.scans.findIndex((s) => s.id === scanId);
+        if (idx === -1) return;
+
+        this.project.scans.splice(idx, 1);
+        this.project.pieces = this.project.pieces.filter((p) => p.scanId !== scanId);
+
+        const bmp = this._bitmapCache.get(scanId);
+        bmp?.close && bmp.close();
+        this._bitmapCache.delete(scanId);
+
+        if (this.activeScanId === scanId) {
+            this.activeScanId = this.project.scans[0]?.id ?? null;
+        }
+        if (!this.project.pieces.find((p) => p.id === this.activePieceId)) {
+            this.activePieceId = this.project.pieces[0]?.id ?? null;
+        }
+
+        this._resetHistory();
+        this.emit('project-changed', {});
+        this.emit('active-piece-changed', {});
+        this.emit('scan-changed', { scanId: this.activeScanId });
+    }
+
     async getScanBitmap(scanId) {
         if (this._bitmapCache.has(scanId)) {
-            return this._bitmapCache.get(scanId);
+            const cached = this._bitmapCache.get(scanId);
+            // 命中就搬到 Map 尾端（最近使用），LRU 淘汰才會先挑到真正沒在用的舊快取。
+            this._bitmapCache.delete(scanId);
+            this._bitmapCache.set(scanId, cached);
+            return cached;
         }
         const scan = this.project.scans.find((s) => s.id === scanId);
         if (!scan) return null;
         const blob = new Blob([scan.bytes], { type: scan.mime });
         const bitmap = await createImageBitmap(blob);
-        this._bitmapCache.set(scanId, bitmap);
+        if (bitmap.width * bitmap.height > MAX_SCAN_PIXELS) {
+            const { width, height } = bitmap;
+            bitmap.close();
+            this._bitmapCache.set(scanId, null);
+            this.emit('scan-oversized', { scanId, width, height });
+            return null;
+        }
+        this._cacheBitmap(scanId, bitmap);
         return bitmap;
+    }
+
+    // 超過 MAX_CACHED_BITMAPS 張就釋放最舊的一張，但絕不淘汰目前正顯示中的掃描圖——
+    // 它可能正被 ScanView 直接持有參照，關掉會讓畫面上的 canvas 炸掉。
+    _cacheBitmap(scanId, bitmap) {
+        this._bitmapCache.set(scanId, bitmap);
+        let realCount = 0;
+        for (const bmp of this._bitmapCache.values()) if (bmp) realCount += 1;
+        while (realCount > MAX_CACHED_BITMAPS) {
+            let evictId = null;
+            for (const [id, bmp] of this._bitmapCache) {
+                if (bmp && id !== this.activeScanId) {
+                    evictId = id;
+                    break;
+                }
+            }
+            if (evictId == null) break; // 剩下的都在使用中，不再淘汰
+            this._bitmapCache.get(evictId).close();
+            this._bitmapCache.delete(evictId);
+            realCount -= 1;
+        }
     }
 
     addPiece(scanId, overrides = {}) {
         this._pushHistoryStep();
-        const piece = createPiece(scanId, overrides);
+        // 流水號取現有物件中最大的同前綴編號 +1，而非單純用陣列長度，
+        // 避免刪除中間的物件後，新物件的預設名稱跟留下來的物件撞名。
+        const prefix = `${this.project.name || '未命名專案'}_`;
+        let maxSeq = 0;
+        for (const p of this.project.pieces) {
+            if (!p.name || !p.name.startsWith(prefix)) continue;
+            const n = Number(p.name.slice(prefix.length));
+            if (Number.isInteger(n) && n > maxSeq) maxSeq = n;
+        }
+        const defaultName = `${prefix}${maxSeq + 1}`;
+        const piece = createPiece(scanId, { name: defaultName, ...overrides });
         this.project.pieces.push(piece);
         this.activePieceId = piece.id;
         this.emit('project-changed', {});

@@ -3,8 +3,9 @@
 
 import { store, createEmptyProject } from '../state.js';
 import { rotatePieceBy, selectionBounds } from '../tools/transform.js';
-import { exportPiecePNG } from '../canvas/preview-pane.js';
+import { exportPiecePNG, exportPieceSVG } from '../canvas/preview-pane.js';
 import { serializeProject, parseProjectZip } from '../pitra-format.js';
+import { zipWrite } from '../pitra-zip.js';
 import { sampleBorderColor } from '../processing/bg-remove.js';
 import { announce } from '../a11y.js';
 
@@ -52,9 +53,22 @@ function downloadBlob(blob, filename) {
     URL.revokeObjectURL(url);
 }
 
+function stripExtension(filename) {
+    return filename.replace(/\.[^.]+$/, '');
+}
+
 async function importImageFiles(files, statusEl) {
     const imageFiles = files.filter((file) => file.type.startsWith('image/'));
+    // 專案名稱預設為第一次匯入的檔名：只在專案還沒有任何圖片、且名稱還沒被手動改過時才代入，
+    // 避免蓋掉使用者已經自己命名（或後續再匯入更多圖片）的專案。
+    const isFreshProject = store.project.scans.length === 0 && store.project.name === '未命名專案';
+    let first = true;
     for (const file of imageFiles) {
+        if (first && isFreshProject) {
+            store.project.name = stripExtension(file.name);
+            el('projectNameInput').value = store.project.name;
+        }
+        first = false;
         const buf = await file.arrayBuffer();
         const bitmap = await createImageBitmap(new Blob([buf], { type: file.type }));
         const { width, height } = bitmap;
@@ -112,35 +126,58 @@ export function wireUI({ scanView, statusEl }) {
     wireScanPaneHeader(scanView, statusEl);
     wireCanvasFloatingToolbar(scanView);
     wirePieceList(statusEl);
+    wireExportAllMenu(statusEl);
     wirePropertiesPanel(statusEl);
     wireDragDropImport(statusEl);
-    wireBelowFoldVisibility();
+    wirePreviewBackground();
 
     store.addEventListener('active-piece-changed', () => syncPropertiesPanel(statusEl));
     store.addEventListener('piece-changed', () => syncPropertiesPanel(statusEl));
     syncPropertiesPanel(statusEl);
 }
 
-// 物件清單在還沒有任何圖片可用時沒有意義（新增物件、框選都無從做起），先隱藏以減少畫面雜訊。
-// 屬性面板已改為 popover，只由物件縮圖的 popovertarget 觸發開啟（沒有圖片就沒有縮圖可點），
-// 不需要也不應該在這裡用 inline display 蓋掉它自己的開關狀態。
-function wireBelowFoldVisibility() {
-    const pieceListBox = el('pieceListBox');
+const previewBgStorageKey = 'pitrace.previewBg';
+const previewBgClasses = ['bg-checker', 'bg-black', 'bg-white', 'bg-gray'];
 
-    function sync() {
-        const hasScan = store.project.scans.length > 0;
-        pieceListBox.style.display = hasScan ? '' : 'none';
+// 預覽底色只是顯示偏好，不寫進 .pitra 專案檔，改用 localStorage 記住上次選擇。
+function wirePreviewBackground() {
+    const wrap = el('previewCanvasWrap');
+    if (!wrap) return;
+    const radios = document.querySelectorAll('input[name="previewBg"]');
+    if (!radios.length) return;
+
+    function apply(mode) {
+        wrap.classList.remove(...previewBgClasses);
+        wrap.classList.add(`bg-${mode}`);
+        try {
+            localStorage.setItem(previewBgStorageKey, mode);
+        } catch { /* 私密瀏覽模式等情況下 localStorage 可能無法使用，忽略即可 */ }
     }
 
-    store.addEventListener('project-changed', sync);
-    store.addEventListener('scan-changed', sync);
-    sync();
+    let stored = 'checker';
+    try {
+        stored = localStorage.getItem(previewBgStorageKey) || 'checker';
+    } catch { /* 同上 */ }
+
+    let matched = false;
+    for (const radio of radios) {
+        if (radio.value === stored) {
+            radio.checked = true;
+            matched = true;
+        }
+        radio.addEventListener('change', () => {
+            if (radio.checked) apply(radio.value);
+        });
+    }
+    apply(matched ? stored : 'checker');
 }
 
 function wireProjectToolbar(statusEl) {
     const projectNameInput = el('projectNameInput');
     const scanSelectWrap = el('scanSelectWrap');
+    const scanSelectInnerWrap = el('scanSelectInnerWrap');
     const scanSelect = el('scanSelect');
+    const btnRemoveScan = el('btnRemoveScan');
 
     projectNameInput.addEventListener('change', () => {
         store.project.name = projectNameInput.value.trim() || '未命名專案';
@@ -156,7 +193,10 @@ function wireProjectToolbar(statusEl) {
             scanSelect.appendChild(opt);
         }
         scanSelect.value = store.activeScanId ?? '';
-        scanSelectWrap.style.display = scans.length > 1 ? '' : 'none';
+        // 下拉選單只有多張圖片時才需要切換；移除按鈕只要有目前使用中的圖片就該在，
+        // 就算專案只有一張掃描圖，使用者也該能把它移除以釋放記憶體。
+        scanSelectInnerWrap.style.display = scans.length > 1 ? '' : 'none';
+        scanSelectWrap.style.display = scans.length > 0 ? '' : 'none';
     }
 
     scanSelect.addEventListener('change', () => store.setActiveScan(scanSelect.value));
@@ -165,6 +205,18 @@ function wireProjectToolbar(statusEl) {
         scanSelect.value = store.activeScanId ?? '';
     });
     syncScanSelect();
+
+    btnRemoveScan.addEventListener('click', () => {
+        const scan = store.getActiveScan();
+        if (!scan) return;
+        const affected = store.project.pieces.filter((p) => p.scanId === scan.id).length;
+        const warning = affected > 0
+            ? `確定要移除圖片「${scan.filename}」？將一併刪除 ${affected} 個引用此圖片的物件，此操作無法復原。`
+            : `確定要移除圖片「${scan.filename}」？此操作無法復原。`;
+        if (!window.confirm(warning)) return;
+        store.removeScan(scan.id);
+        announce(statusEl, `已移除圖片 ${scan.filename}`);
+    });
 
     el('btnNewProject').addEventListener('click', () => {
         const hasContent = store.project.scans.length > 0 || store.project.pieces.length > 0;
@@ -372,6 +424,111 @@ function wirePieceList(statusEl) {
     });
 }
 
+// 同一個檔名底（不含副檔名）在批次匯出時可能撞名（例如多個「未命名物件」），加流水號避免互相覆蓋。
+function uniqueBaseNameFactory() {
+    const used = new Set();
+    return function uniqueBaseName(base) {
+        let name = base;
+        let i = 2;
+        while (used.has(name)) {
+            name = `${base}-${i}`;
+            i += 1;
+        }
+        used.add(name);
+        return name;
+    };
+}
+
+// 批次匯出全部物件：PNG、SVG 或兩者一起，一律打包成單一 ZIP 再下載——
+// 物件一多的話逐檔跳出下載對話框既擾人、也容易被瀏覽器的多重下載限制擋掉。
+async function exportAllBundle(kinds, statusEl, triggerBtn) {
+    const pieces = store.project.pieces;
+    if (!pieces.length) return announce(statusEl, '目前沒有任何物件可以匯出');
+
+    triggerBtn.disabled = true;
+    triggerBtn.classList.add('is-loading');
+    const uniqueBaseName = uniqueBaseNameFactory();
+    const entries = [];
+    let skipped = 0;
+    try {
+        for (const piece of pieces) {
+            const base = uniqueBaseName((piece.name || 'piece').trim() || 'piece');
+            let pieceOk = false;
+            if (kinds.includes('png')) {
+                const blob = await exportPiecePNG(piece);
+                if (blob) {
+                    entries.push({ name: `${base}.png`, data: new Uint8Array(await blob.arrayBuffer()) });
+                    pieceOk = true;
+                }
+            }
+            if (kinds.includes('svg')) {
+                const blob = await exportPieceSVG(piece);
+                if (blob) {
+                    entries.push({ name: `${base}.svg`, data: new Uint8Array(await blob.arrayBuffer()) });
+                    pieceOk = true;
+                }
+            }
+            if (!pieceOk) skipped += 1;
+        }
+    } finally {
+        triggerBtn.disabled = false;
+        triggerBtn.classList.remove('is-loading');
+    }
+
+    if (!entries.length) return announce(statusEl, '沒有可匯出的物件（尚未設定選取範圍）');
+
+    const zipBytes = zipWrite(entries);
+    const blob = new Blob([zipBytes], { type: 'application/zip' });
+    const suffix = kinds.length > 1 ? 'png-svg' : kinds[0];
+    downloadBlob(blob, `${store.project.name || 'pitrace'}-${suffix}.zip`);
+    const skipNote = skipped ? `，${skipped} 個物件因尚未設定選取範圍被跳過` : '';
+    announce(statusEl, `已匯出 ${entries.length} 個檔案的 ZIP${skipNote}`);
+}
+
+// 物件清單標題列的「匯出全部」下拉選單：純 CSS 絕對定位 + hidden 屬性切換，不用原生 popover。
+function wireExportAllMenu(statusEl) {
+    const trigger = el('btnExportAll');
+    const menu = el('exportAllMenu');
+    if (!trigger || !menu) return;
+
+    function close() {
+        menu.hidden = true;
+        trigger.setAttribute('aria-expanded', 'false');
+    }
+    function open() {
+        menu.hidden = false;
+        trigger.setAttribute('aria-expanded', 'true');
+    }
+    trigger.addEventListener('click', () => {
+        if (menu.hidden) open(); else close();
+    });
+    document.addEventListener('click', (evt) => {
+        if (!menu.hidden && evt.target !== trigger && !menu.contains(evt.target) && !trigger.contains(evt.target)) {
+            close();
+        }
+    });
+    document.addEventListener('keydown', (evt) => {
+        if (evt.key === 'Escape' && !menu.hidden) {
+            close();
+            trigger.focus();
+        }
+    });
+
+    async function runAndClose(kinds) {
+        close();
+        await exportAllBundle(kinds, statusEl, trigger);
+    }
+    el('btnExportAllPNG').addEventListener('click', () => runAndClose(['png']));
+    el('btnExportAllSVG').addEventListener('click', () => runAndClose(['svg']));
+    el('btnExportAllZip').addEventListener('click', () => runAndClose(['png', 'svg']));
+
+    function syncEnabled() {
+        trigger.disabled = store.project.pieces.length === 0;
+    }
+    store.addEventListener('project-changed', syncEnabled);
+    syncEnabled();
+}
+
 function wirePropertiesPanel(statusEl) {
     el('btnRotateLeft').addEventListener('click', () => {
         const piece = store.getActivePiece();
@@ -392,6 +549,12 @@ function wirePropertiesPanel(statusEl) {
     };
     store.addEventListener('active-piece-changed', syncRotateButtons);
     syncRotateButtons();
+
+    bindRangeNumberPair('rotationRange', 'rotationValue', (v) => {
+        const piece = store.getActivePiece();
+        if (!piece) return;
+        store.updatePiece(piece.id, { rotation: ((v % 360) + 360) % 360 });
+    });
 
     el('pieceNameInput').addEventListener('change', (evt) => {
         const piece = store.getActivePiece();
@@ -418,6 +581,18 @@ function wirePropertiesPanel(statusEl) {
         if (!piece || piece.selection.type !== 'lasso' || !piece.selection.loops?.length) return;
         store.updatePiece(piece.id, { selection: { type: 'lasso', loops: [] } });
         announce(statusEl, '已清除所有套索區塊');
+    });
+
+    bindRangeNumberPair('enhanceContrast', 'enhanceContrastValue', (n) => {
+        const piece = store.getActivePiece();
+        if (!piece) return;
+        store.updatePiece(piece.id, { enhance: { ...piece.enhance, contrast: n } });
+    });
+
+    bindRangeNumberPair('enhanceBrightness', 'enhanceBrightnessValue', (n) => {
+        const piece = store.getActivePiece();
+        if (!piece) return;
+        store.updatePiece(piece.id, { enhance: { ...piece.enhance, brightness: n } });
     });
 
     el('bgRemovalEnabled').addEventListener('change', (evt) => {
@@ -471,6 +646,18 @@ function wirePropertiesPanel(statusEl) {
         store.updatePiece(piece.id, { bgRemoval: { ...piece.bgRemoval, softness: n } });
     });
 
+    el('svgVectorEnabled').addEventListener('change', (evt) => {
+        const piece = store.getActivePiece();
+        if (!piece) return;
+        store.updatePiece(piece.id, { svgExport: { ...piece.svgExport, enabled: evt.target.checked } });
+    });
+
+    bindRangeNumberPair('svgSimplify', 'svgSimplifyValue', (n) => {
+        const piece = store.getActivePiece();
+        if (!piece) return;
+        store.updatePiece(piece.id, { svgExport: { ...piece.svgExport, simplifyTolerance: n } });
+    });
+
     el('btnExportPNG').addEventListener('click', async () => {
         const piece = store.getActivePiece();
         if (!piece) return announce(statusEl, '請先選取物件');
@@ -485,7 +672,26 @@ function wirePropertiesPanel(statusEl) {
             btnExportPNG.classList.remove('is-loading');
         }
         if (!blob) return announce(statusEl, '尚未設定選取範圍，無法匯出');
-        const filename = `${(el('exportFileName').value || piece.name || 'piece').trim()}.png`;
+        const filename = `${(piece.name || 'piece').trim()}.png`;
+        downloadBlob(blob, filename);
+        announce(statusEl, `已匯出 ${filename}`);
+    });
+
+    el('btnExportSVG').addEventListener('click', async () => {
+        const piece = store.getActivePiece();
+        if (!piece) return announce(statusEl, '請先選取物件');
+        const btnExportSVG = el('btnExportSVG');
+        btnExportSVG.disabled = true;
+        btnExportSVG.classList.add('is-loading');
+        let blob;
+        try {
+            blob = await exportPieceSVG(piece);
+        } finally {
+            btnExportSVG.disabled = false;
+            btnExportSVG.classList.remove('is-loading');
+        }
+        if (!blob) return announce(statusEl, '尚未設定選取範圍，無法匯出');
+        const filename = `${(piece.name || 'piece').trim()}.svg`;
         downloadBlob(blob, filename);
         announce(statusEl, `已匯出 ${filename}`);
     });
@@ -530,11 +736,19 @@ function renderLassoLoopList(container, piece, statusEl) {
 
 function syncPropertiesPanel(statusEl) {
     const piece = store.getActivePiece();
-    if (!piece) return;
+    const emptyEl = el('propertiesEmptyState');
+    if (!piece) {
+        if (emptyEl) emptyEl.style.display = '';
+        el('propertiesBody').style.display = 'none';
+        return;
+    }
+    if (emptyEl) emptyEl.style.display = 'none';
     el('propertiesBody').style.display = '';
 
     el('pieceNameInput').value = piece.name;
-    el('rotationDisplay').textContent = `${piece.rotation}°`;
+    const dispRotation = Math.round((piece.rotation > 180 ? piece.rotation - 360 : piece.rotation) * 10) / 10;
+    el('rotationRange').value = String(dispRotation);
+    el('rotationValue').value = String(dispRotation);
 
     const isRect = piece.selection.type === 'rect';
     el('rectFieldsGroup').style.display = isRect ? '' : 'none';
@@ -551,6 +765,11 @@ function syncPropertiesPanel(statusEl) {
         el('btnClearLasso').disabled = !piece.selection.loops?.length;
     }
 
+    el('enhanceContrast').value = piece.enhance?.contrast ?? 0;
+    el('enhanceContrastValue').value = piece.enhance?.contrast ?? 0;
+    el('enhanceBrightness').value = piece.enhance?.brightness ?? 0;
+    el('enhanceBrightnessValue').value = piece.enhance?.brightness ?? 0;
+
     el('bgRemovalEnabled').checked = piece.bgRemoval.enabled;
     el('bgSampleR').value = piece.bgRemoval.sampleColor.r;
     el('bgSampleG').value = piece.bgRemoval.sampleColor.g;
@@ -560,5 +779,8 @@ function syncPropertiesPanel(statusEl) {
     el('bgThresholdValue').value = piece.bgRemoval.threshold;
     el('bgSoftness').value = piece.bgRemoval.softness;
     el('bgSoftnessValue').value = piece.bgRemoval.softness;
-    el('exportFileName').value = el('exportFileName').value || piece.name;
+
+    el('svgVectorEnabled').checked = piece.svgExport?.enabled ?? false;
+    el('svgSimplify').value = piece.svgExport?.simplifyTolerance ?? 0.75;
+    el('svgSimplifyValue').value = piece.svgExport?.simplifyTolerance ?? 0.75;
 }
