@@ -97,7 +97,12 @@ export function initAutosave(statusEl) {
         clearTimeout(timer);
         timer = setTimeout(() => {
             const hasContent = store.project.scans.length > 0 || store.project.pieces.length > 0;
-            if (!hasContent) return; // 空專案沒有東西好救，不用寫入蓋掉舊快照
+            if (!hasContent) {
+                // 使用者主動清空專案（例如刪光所有掃描圖）也要清掉舊快照，
+                // 不然下次重開會把已經刪除的內容從舊快照復活回來，變成刪不掉。
+                clearSnapshot();
+                return;
+            }
             const bytes = serializeProject(store.project);
             saveSnapshot(bytes, { name: store.project.name, savedAt: new Date().toISOString() });
         }, AUTOSAVE_DEBOUNCE_MS);

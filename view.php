@@ -482,6 +482,15 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         flex-shrink: 0;
     }
 
+    /* 標題列裡兩組性質不同的按鈕群（例如底色切換 vs 顯示模式選單）之間的細直線分隔，
+       跟隔壁的 .ts-divider（水平、獨立一整行）用途不同，這裡要嵌在同一行 flex 裡當視覺區隔。 */
+    .pane-toolbar-divider {
+        width: 1px;
+        align-self: stretch;
+        margin: 0.25rem 0;
+        background: var(--ts-gray-300, #ddd);
+    }
+
     /* 「匯出全部」下拉選單：不用原生 popover（top-layer 定位在不同瀏覽器間不夠穩定），
        改用相對定位容器 + JS 切換 hidden，跟畫布浮動工具列同一手法自己控制位置。 */
     .pane-menu-wrap {
@@ -503,6 +512,14 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
     }
 
     .pane-dropdown-menu[hidden] {
+        display: none;
+    }
+
+    /* Tocas 的 .ts-icon 基礎規則本身就寫死 display:inline，跟原生 [hidden] 屬性的
+       UA 樣式（display:none）specificity 打平時後者輸——因為瀏覽器套用作者樣式表一律晚於
+       UA 樣式表。單純設定 icon.hidden = true 在 JS 那端看起來是對的，畫面卻不會真的消失。
+       用 class+屬性的複合選擇器把 specificity 疊高，才能穩贏、不需要 !important。 */
+    .ts-icon[hidden] {
         display: none;
     }
 
@@ -986,6 +1003,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                             <span class="preview-bg-swatch is-gray" aria-hidden="true"></span>
                                         </label>
                                     </div>
+                                    <div class="pane-toolbar-divider" aria-hidden="true"></div>
                                     <div class="pane-menu-wrap">
                                         <button id="btnPreviewMode" class="ts-button is-icon is-small is-ghost"
                                             aria-label="預覽模式：結果" title="預覽模式：結果"

@@ -400,7 +400,11 @@ export class ScanView {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, rect.width, rect.height);
 
-        if (this.bitmap) {
+        // width===0 代表這個 ImageBitmap 已經被 close() 過（規格保證 detached 之後 width/height 讀回 0）——
+        // 移除掃描圖／開新專案會同步關閉舊 bitmap，但 active-piece-changed 等事件仍可能在
+        // loadActiveScan() 換上新 bitmap 之前搶先觸發 draw()，這裡擋掉避免對已關閉的來源呼叫
+        // drawImage 拋出 InvalidStateError。
+        if (this.bitmap && this.bitmap.width > 0) {
             ctx.save();
             ctx.translate(this.tx, this.ty);
             ctx.scale(this.scale, this.scale);

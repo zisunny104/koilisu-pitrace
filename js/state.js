@@ -181,8 +181,11 @@ class Store extends EventTarget {
         this.activeTool = 'rect';
         this._resetHistory();
         this.emit('project-changed', {});
-        this.emit('active-piece-changed', {});
+        // scan-changed 要先於 active-piece-changed 觸發：前者驅動 ScanView.loadActiveScan()
+        // 同步清掉舊 bitmap 參照，若順序相反，active-piece-changed 觸發的 draw() 會搶在
+        // 清除之前對著剛被關閉的舊 bitmap 畫圖。
         this.emit('scan-changed', { scanId: this.activeScanId });
+        this.emit('active-piece-changed', {});
     }
 
     async addScan({ filename, mime, bytes, width, height }) {
@@ -227,8 +230,10 @@ class Store extends EventTarget {
 
         this._resetHistory();
         this.emit('project-changed', {});
-        this.emit('active-piece-changed', {});
+        // 同上 setProject()：scan-changed 要先於 active-piece-changed，才能讓
+        // loadActiveScan() 先同步清掉剛被 close() 的舊 bitmap，避免 draw() 搶在前面炸掉。
         this.emit('scan-changed', { scanId: this.activeScanId });
+        this.emit('active-piece-changed', {});
     }
 
     async getScanBitmap(scanId) {
