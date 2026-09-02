@@ -40,7 +40,7 @@
 
 ### 獨立使用
 
-1. 克隆倉庫：
+1. Clone repo：
 ```bash
 git clone https://github.com/zisunny104/pitrace.git
 cd pitrace
@@ -52,7 +52,7 @@ cd pitrace
 
 ### 與 KoiLiSu 開利手整合
 
-1. 將此倉庫放置在 `koilisu/apps/pitrace/` 目錄
+1. 將此 repo 放置在 `koilisu/apps/pitrace/` 目錄
 2. 透過 `https://toka.dev/koilisu/pitrace` 造訪
 
 ## 無障礙
