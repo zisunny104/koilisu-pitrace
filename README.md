@@ -53,7 +53,8 @@
 - HEIC／TIFF 匯入、WebP／TIFF 輸出（目前支援 PNG／JPEG／WebP 匯入、PNG 輸出）
 - 批次處理、Auto Save、Linked Project（僅存路徑參照，不封裝原圖）模式
 - AI 輔助分割／matting
-- SVG 輸出目前為多邊形描邊，貝茲曲線平滑化／轉角保留／mm 實體單位（DPI 換算）留待下一階段
+- SVG 輸出已支援貝茲曲線平滑化（轉角保留）與 mm 實體單位；DPI 自動從 PNG `pHYs` chunk／JPEG JFIF density 讀取，偵測不到時可在向量預覽面板手動填
+- PDF 掃描檔匯入尚未支援（僅 PNG／JPEG／WebP 點陣圖），未來若加入可提供比點陣 metadata 更精確的 DPI 來源
 - 去背運算目前於主執行緒同步進行，Web Worker／OffscreenCanvas 背景運算等效能架構留待下一階段
 
 ## 使用的開源函式庫

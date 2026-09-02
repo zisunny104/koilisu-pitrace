@@ -1238,6 +1238,12 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                 <div class="has-top-spaced-small ts-text is-description" id="svgNodeCount"></div>
                             </div>
 
+                            <div class="has-top-spaced-small">
+                                <label class="ts-text is-label" for="scanDpiInput">掃描 DPI</label>
+                                <div class="ts-input"><input type="number" id="scanDpiInput" min="1" step="1" placeholder="未偵測到"></div>
+                                <div class="has-top-spaced-small ts-text is-description">匯入時自動從檔案讀取，讀不到時可以手動填；留空則匯出 SVG 不含實體尺寸單位。</div>
+                            </div>
+
                             <div class="ts-divider has-vertically-spaced"></div>
 
                             <div class="ts-buttons">

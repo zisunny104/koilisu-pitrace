@@ -367,9 +367,16 @@ export async function exportPieceSVG(piece) {
     const traced = await tracePieceVector(piece);
     if (!traced) return null;
     const { pathD, width, height } = traced;
+    // viewBox 維持原始像素座標系不變（pathD 完全不用換算），只有外層 width/height 帶不帶
+    // 單位——瀏覽器/向量軟體會自動把 viewBox 內容縮放成宣告的實際尺寸。沒有 dpi 時純數字、
+    // 無單位，跟舊行為完全一致。
+    const scan = store.project.scans.find((s) => s.id === piece.scanId);
+    const dims = scan?.dpi
+        ? { w: `${((width * 25.4) / scan.dpi).toFixed(2)}mm`, h: `${((height * 25.4) / scan.dpi).toFixed(2)}mm` }
+        : { w: width, h: height };
     const svg =
         `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" ` +
-        `width="${width}" height="${height}">` +
+        `width="${dims.w}" height="${dims.h}">` +
         `<path d="${pathD}" fill="#000000" fill-rule="evenodd"/></svg>`;
     return new Blob([svg], { type: 'image/svg+xml' });
 }

@@ -47,6 +47,7 @@ export function serializeProject(project) {
             mime: s.mime,
             width: s.width,
             height: s.height,
+            dpi: s.dpi ?? null,
         })),
         pieceOrder: project.pieces.map((p) => p.id),
     };

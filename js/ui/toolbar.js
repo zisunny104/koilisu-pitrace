@@ -7,6 +7,7 @@ import { exportPiecePNG, exportPieceSVG } from '../canvas/preview-pane.js';
 import { serializeProject, parseProjectZip } from '../pitra-format.js';
 import { zipWrite } from '../pitra-zip.js';
 import { sampleBorderColor } from '../processing/bg-remove.js';
+import { detectImageDpi } from '../processing/image-metadata.js';
 import { announce } from '../a11y.js';
 import { clearSnapshot } from '../autosave.js';
 import { setPreviewMode } from './preview-mode.js';
@@ -113,7 +114,8 @@ async function importImageFiles(files, statusEl) {
         const bitmap = await createImageBitmap(new Blob([buf], { type: file.type }));
         const { width, height } = bitmap;
         bitmap.close();
-        await store.addScan({ filename: file.name, mime: file.type, bytes: buf, width, height });
+        const dpi = detectImageDpi(new Uint8Array(buf), file.type);
+        await store.addScan({ filename: file.name, mime: file.type, bytes: buf, width, height, dpi });
     }
     if (imageFiles.length) announce(statusEl, `已匯入 ${imageFiles.length} 張圖片`);
     else if (files.length) announce(statusEl, '未找到可匯入的圖片檔案');
@@ -891,6 +893,13 @@ function wirePropertiesPanel(statusEl) {
         store.updatePiece(piece.id, { svgExport: { ...piece.svgExport, simplifyTolerance: n } });
     });
 
+    el('scanDpiInput').addEventListener('change', (evt) => {
+        const piece = store.getActivePiece();
+        if (!piece) return;
+        const raw = evt.target.value;
+        store.setScanDpi(piece.scanId, raw ? Number(raw) : null);
+    });
+
     el('btnExportPNG').addEventListener('click', async () => {
         const piece = store.getActivePiece();
         if (!piece) return announce(statusEl, '請先選取物件');
@@ -1030,4 +1039,7 @@ function syncPropertiesPanel(statusEl) {
     el('svgVectorEnabled').checked = piece.svgExport?.enabled ?? false;
     el('svgSimplify').value = piece.svgExport?.simplifyTolerance ?? 0.75;
     el('svgSimplifyValue').value = piece.svgExport?.simplifyTolerance ?? 0.75;
+
+    const scan = store.project.scans.find((s) => s.id === piece.scanId);
+    el('scanDpiInput').value = scan?.dpi ?? '';
 }

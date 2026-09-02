@@ -154,11 +154,56 @@ function simplifyRing(points, tolerance) {
     return merged.length >= 3 ? merged : points;
 }
 
+// 轉角保留門檻：入向量／出向量夾角超過這個角度視為「轉角」，維持直線；否則視為平滑點，
+// 用 Catmull-Rom 貝茲擬合。不開放 UI 調整，避免面板變複雜。
+const CORNER_ANGLE_DEG = 40;
+
+// 頂點 curr 的轉角角度：入向量 (prev→curr) 與出向量 (curr→next) 的夾角，0 表示完全同向（無轉角）。
+function turnAngleDeg(prev, curr, next) {
+    const v1x = curr[0] - prev[0], v1y = curr[1] - prev[1];
+    const v2x = next[0] - curr[0], v2y = next[1] - curr[1];
+    const len1 = Math.hypot(v1x, v1y);
+    const len2 = Math.hypot(v2x, v2y);
+    if (len1 === 0 || len2 === 0) return 0;
+    const cos = Math.max(-1, Math.min(1, (v1x * v2x + v1y * v2y) / (len1 * len2)));
+    return (Math.acos(cos) * 180) / Math.PI;
+}
+
+// 逐段序列化封閉環：兩端點都是平滑點才用 Catmull-Rom 轉出的三次貝茲，其餘（含任一端是
+// 轉角）維持直線，讓矩形這類銳角外形不會被磨圓，圓弧這類外形則平滑不見鋸齒。
 function ringToPathD(ring) {
-    if (!ring.length) return '';
-    const [first, ...rest] = ring;
+    const n = ring.length;
+    if (!n) return '';
+    if (n < 3) {
+        const [first, ...rest] = ring;
+        let d = `M${first[0].toFixed(2)},${first[1].toFixed(2)}`;
+        for (const p of rest) d += `L${p[0].toFixed(2)},${p[1].toFixed(2)}`;
+        return d + 'Z';
+    }
+
+    const isCorner = ring.map((p, idx) => {
+        const prev = ring[(idx - 1 + n) % n];
+        const next = ring[(idx + 1) % n];
+        return turnAngleDeg(prev, p, next) > CORNER_ANGLE_DEG;
+    });
+
+    const first = ring[0];
     let d = `M${first[0].toFixed(2)},${first[1].toFixed(2)}`;
-    for (const p of rest) d += `L${p[0].toFixed(2)},${p[1].toFixed(2)}`;
+    for (let i = 0; i < n; i++) {
+        const curr = ring[i];
+        const next = ring[(i + 1) % n];
+        if (isCorner[i] || isCorner[(i + 1) % n]) {
+            d += `L${next[0].toFixed(2)},${next[1].toFixed(2)}`;
+        } else {
+            const prev = ring[(i - 1 + n) % n];
+            const after = ring[(i + 2) % n];
+            const cp1x = curr[0] + (next[0] - prev[0]) / 6;
+            const cp1y = curr[1] + (next[1] - prev[1]) / 6;
+            const cp2x = next[0] - (after[0] - curr[0]) / 6;
+            const cp2y = next[1] - (after[1] - curr[1]) / 6;
+            d += `C${cp1x.toFixed(2)},${cp1y.toFixed(2)} ${cp2x.toFixed(2)},${cp2y.toFixed(2)} ${next[0].toFixed(2)},${next[1].toFixed(2)}`;
+        }
+    }
     return d + 'Z';
 }
 

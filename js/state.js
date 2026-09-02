@@ -188,8 +188,8 @@ class Store extends EventTarget {
         this.emit('active-piece-changed', {});
     }
 
-    async addScan({ filename, mime, bytes, width, height }) {
-        const scan = { id: makeId('scan'), filename, mime, bytes, width, height };
+    async addScan({ filename, mime, bytes, width, height, dpi }) {
+        const scan = { id: makeId('scan'), filename, mime, bytes, width, height, dpi: dpi ?? null };
         this.project.scans.push(scan);
         this.activeScanId = scan.id;
         this.emit('project-changed', {});
@@ -203,6 +203,15 @@ class Store extends EventTarget {
         const scan = this.project.scans.find((s) => s.id === scanId);
         if (!scan) return;
         scan.filename = filename;
+        this.emit('project-changed', {});
+        this.emit('scan-changed', { scanId });
+    }
+
+    // 手動覆寫掃描圖片的 DPI（匯入時偵測不到，或使用者想校正自動偵測結果）。
+    setScanDpi(scanId, dpi) {
+        const scan = this.project.scans.find((s) => s.id === scanId);
+        if (!scan) return;
+        scan.dpi = dpi ?? null;
         this.emit('project-changed', {});
         this.emit('scan-changed', { scanId });
     }
