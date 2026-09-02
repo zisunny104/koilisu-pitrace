@@ -34,13 +34,6 @@ export function rgbToLab({ r, g, b }) {
     };
 }
 
-export function deltaE76(lab1, lab2) {
-    const dl = lab1.l - lab2.l;
-    const da = lab1.a - lab2.a;
-    const db = lab1.b - lab2.b;
-    return Math.sqrt(dl * dl + da * da + db * db);
-}
-
 function clampIndex(idx, length) {
     return idx < 0 ? 0 : idx >= length ? length - 1 : idx;
 }

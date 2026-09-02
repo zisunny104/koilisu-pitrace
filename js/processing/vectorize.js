@@ -237,12 +237,3 @@ export function traceAlphaContours(imageData, opts = {}) {
     const nodeCount = rings.reduce((sum, ring) => sum + ring.length, 0);
     return { pathD, width, height, nodeCount };
 }
-
-export function contoursToSVG(imageData, opts = {}) {
-    const { pathD, width, height } = traceAlphaContours(imageData, opts);
-    return (
-        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" ` +
-        `width="${width}" height="${height}">` +
-        `<path d="${pathD}" fill="#000000" fill-rule="evenodd"/></svg>`
-    );
-}

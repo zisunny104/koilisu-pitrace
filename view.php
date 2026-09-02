@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html id="html" class="is-rounded" lang="zh-tw">
+<html id="html" lang="zh-tw">
 
 <?php
 // 計算此應用展開後的 URL 基準路徑（例： /koilisu/apps/pitrace）
@@ -762,7 +762,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
     </style>
 </head>
 
-<body>
+<body class="is-rounded">
     <a href="#main-content" class="skip-link">跳到主要內容</a>
 
     <div class="main-content">
@@ -1278,7 +1278,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                     </div>
                     <div class="ts-text is-description">
                         Built with ❤️ using Tocas UI |
-                        <a href="https://github.com/zisunny104/koilisu-pitrace" target="_blank"
+                        <a href="https://github.com/zisunny104/pitrace" target="_blank"
                             style="display: inline-block; padding: 2px 8px; background: #24292f; color: white; text-decoration: none; border-radius: 6px; font-size: 0.85em; font-weight: 500; margin-left: 4px;">
                             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"
                                 style="vertical-align: text-bottom; margin-right: 4px;">
@@ -1314,7 +1314,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
     <script>
     // 深淺色模式功能
     function setTheme(theme) {
-        document.getElementById('html').className = theme === 'system' ?
+        document.body.className = theme === 'system' ?
             'is-rounded' :
             `is-rounded is-${theme}`;
         document.cookie = `preferred-theme=${theme}; path=/; max-age=31536000`;
@@ -1370,9 +1370,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         // 這裡的寬度守衛只是保護 cookie 還原時（上次在桌面設成 fluid、這次用手機開頁面）的邊界情況。
         if (window.innerWidth >= 1024) {
             if (isFluid) {
-                // 捲到 #mainAnchor（分隔線＋main 的外層）而不是 main 本身，
-                // 這樣分隔線會露在畫面最上緣，專案操作列才不會直接貼死在視窗頂端。
-                document.getElementById('mainAnchor').scrollIntoView({ block: 'start' });
+                document.querySelector('#mainAnchor .ts-divider').scrollIntoView({ block: 'start' });
             } else {
                 window.scrollTo({ top: 0 });
             }
