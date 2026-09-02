@@ -2,7 +2,7 @@
 
 > 掃描手繪稿，去背、校正、輸出透明 PNG，全程本機處理不上傳。
 
-隸屬 [KoiLiSu 開利手](https://github.com/zisunny104/koilisu-framework) 專案家族的一員。
+隸屬 [KoiLiSu 開利手](https://github.com/zisunny104/koilisu) 專案家族的一員。
 
 ## 功能特色
 
@@ -50,7 +50,7 @@ cd pitrace
 
 3. 直接訪問 `index.php`
 
-### 與 KoiLiSu Framework 整合
+### 與 KoiLiSu 開利手整合
 
 1. 將此倉庫放置在 `koilisu/apps/pitrace/` 目錄
 2. 透過 `https://toka.dev/koilisu/pitrace` 造訪
@@ -84,7 +84,7 @@ cd pitrace
 
 ## 授權
 
-此專案為 [KoiLiSu 開利手](https://github.com/zisunny104/koilisu-framework) 專案的一部分，MIT 授權，由 Tokas (Xiang-zi Xie) 開發。詳見 [LICENSE](LICENSE)。
+此專案為 [KoiLiSu 開利手](https://github.com/zisunny104/koilisu) 專案的一部分，MIT 授權，由 Tokas (Xiang-zi Xie) 開發。詳見 [LICENSE](LICENSE)。
 
 ---
 
