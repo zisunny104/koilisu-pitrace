@@ -36,6 +36,25 @@
 - **專案檔格式**：自製零依賴 ZIP（STORED，不壓縮）讀寫模組，封裝 manifest + 原圖 + 各作品編輯參數
 - **處理方式**：完全在瀏覽器端處理，無需後端伺服器，不上傳任何影像資料
 
+## 安裝
+
+### 獨立使用
+
+1. 克隆倉庫：
+```bash
+git clone https://github.com/zisunny104/pitrace.git
+cd pitrace
+```
+
+2. 配置網頁伺服器
+
+3. 直接訪問 `index.php`
+
+### 與 KoiLiSu Framework 整合
+
+1. 將此倉庫放置在 `koilisu/apps/pitrace/` 目錄
+2. 透過 `https://toka.dev/koilisu/pitrace` 造訪
+
 ## 無障礙
 
 - `lang="zh-tw"`、skip-to-content 跳轉連結、語意化 landmark
@@ -69,7 +88,7 @@
 
 ---
 
-**版本**：0.1.0
+**版本**：0.1.1
 **作者**：Tokas (Xiang-zi Xie)
 **專案**：KoiLiSu 開利手
-**網址**：/koilisu/pitrace
+**網址**：https://toka.dev/koilisu/pitrace
