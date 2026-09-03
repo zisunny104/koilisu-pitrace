@@ -892,6 +892,11 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                 <div class="ts-text is-description">圖片載入中…</div>
                             </div>
                             <div class="canvas-floating-toolbar pane-toolbar" role="toolbar" aria-label="編輯工具">
+                                <button id="btnAddPieceFloating" class="ts-button is-icon" aria-label="新增物件"
+                                    data-tooltip="新增物件">
+                                    <span class="ts-icon is-plus-icon" aria-hidden="true"></span>
+                                </button>
+                                <div class="pane-toolbar-divider" aria-hidden="true"></div>
                                 <div class="ts-selection is-compact" role="radiogroup" aria-label="選取工具">
                                     <label class="item" data-tooltip="矩形選取（M）">
                                         <input type="radio" name="tool" value="rect" id="tool-rect" checked aria-label="矩形選取">

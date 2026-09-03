@@ -195,7 +195,7 @@ function wireDragDropImport(statusEl) {
 export function wireUI({ scanView, statusEl }) {
     wireProjectToolbar(statusEl);
     wireScanPaneHeader(scanView, statusEl);
-    wireCanvasFloatingToolbar(scanView);
+    wireCanvasFloatingToolbar(scanView, statusEl);
     wirePieceList(statusEl);
     wireExportAllMenu(statusEl);
     wirePropertiesPanel(statusEl);
@@ -559,8 +559,11 @@ function wireScanPaneHeader(scanView, statusEl) {
     wireFocusMode(scanView);
 }
 
-// 畫布內下方置中的浮動工具列：工具選取 + 縮放。
-function wireCanvasFloatingToolbar(scanView) {
+// 畫布內下方置中的浮動工具列：新增物件 + 工具選取 + 縮放。
+// 全螢幕工作區時只有這個工具列還看得到（見 wireFocusMode 註解），所以「新增物件」也放一份在這裡。
+function wireCanvasFloatingToolbar(scanView, statusEl) {
+    el('btnAddPieceFloating').addEventListener('click', () => addPiece(statusEl));
+
     document.querySelectorAll('input[name="tool"]').forEach((radio) => {
         radio.addEventListener('change', () => {
             if (radio.checked) store.setActiveTool(radio.value);
@@ -573,6 +576,7 @@ function wireCanvasFloatingToolbar(scanView) {
     el('btnZoomFit').addEventListener('click', () => scanView.fitToView());
     const syncCanvasControls = () => {
         const hasScan = !!store.getActiveScan();
+        el('btnAddPieceFloating').disabled = !hasScan;
         el('btnZoomOut').disabled = !hasScan;
         el('btnZoomIn').disabled = !hasScan;
         el('btnZoomFit').disabled = !hasScan;
@@ -678,12 +682,14 @@ function wireZoomControl(scanView) {
     return { setEnabled };
 }
 
+function addPiece(statusEl) {
+    if (!store.activeScanId) return announce(statusEl, '請先匯入圖片');
+    store.addPiece(store.activeScanId);
+    announce(statusEl, '已新增物件，請框選範圍');
+}
+
 function wirePieceList(statusEl) {
-    el('btnAddPiece').addEventListener('click', () => {
-        if (!store.activeScanId) return announce(statusEl, '請先匯入圖片');
-        store.addPiece(store.activeScanId);
-        announce(statusEl, '已新增物件，請框選範圍');
-    });
+    el('btnAddPiece').addEventListener('click', () => addPiece(statusEl));
 }
 
 // 同一個檔名底（不含副檔名）在批次匯出時可能撞名（例如多個「未命名物件」），加流水號避免互相覆蓋。
