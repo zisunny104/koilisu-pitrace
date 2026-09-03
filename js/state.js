@@ -30,17 +30,10 @@ export function createPiece(scanId, overrides = {}) {
         rotation: 0,
         eraseStrokes: [],
         eraseRadius: 40,
-        enhance: {
-            contrast: 0,
-            brightness: 0,
-        },
         bgRemoval: {
             enabled: true,
             sampleColor: { r: 255, g: 255, b: 255 },
-            threshold: 12,
-            softness: 10,
-            bgRadius: 40,
-            isolationSuppress: 40,
+            strength: 50,
         },
         svgExport: {
             enabled: false,

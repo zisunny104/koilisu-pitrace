@@ -1139,32 +1139,6 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                             <div class="ts-divider has-vertically-spaced"></div>
 
                             <div class="ts-header is-start-icon">
-                                <span class="ts-icon is-sun-icon" aria-hidden="true"></span>
-                                影像增強
-                            </div>
-                            <div class="ts-text is-description has-top-spaced-small">
-                                會在去背景之前套用，淡色筆跡因此也能被拉開跟背景的顏色距離、跨過去背門檻被保留下來，不是只調整顏色。
-                            </div>
-
-                            <div class="has-top-spaced-small">
-                                <label class="ts-text is-label" for="enhanceContrast">對比度</label>
-                                <div class="range-row">
-                                    <div class="ts-range"><input type="range" id="enhanceContrast" min="-100" max="100" value="0"></div>
-                                    <div class="ts-input"><input type="number" id="enhanceContrastValue" min="-100" max="100" value="0" aria-label="對比度數值"></div>
-                                </div>
-                            </div>
-
-                            <div class="has-top-spaced-small">
-                                <label class="ts-text is-label" for="enhanceBrightness">亮度</label>
-                                <div class="range-row">
-                                    <div class="ts-range"><input type="range" id="enhanceBrightness" min="-100" max="100" value="0"></div>
-                                    <div class="ts-input"><input type="number" id="enhanceBrightnessValue" min="-100" max="100" value="0" aria-label="亮度數值"></div>
-                                </div>
-                            </div>
-
-                            <div class="ts-divider has-vertically-spaced"></div>
-
-                            <div class="ts-header is-start-icon">
                                 <span class="ts-icon is-palette-icon" aria-hidden="true"></span>
                                 去背景
                             </div>
@@ -1186,35 +1160,12 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                             </div>
 
                             <div class="has-top-spaced">
-                                <label class="ts-text is-label" for="bgThreshold">顏色距離門檻（ΔE）</label>
+                                <label class="ts-text is-label" for="bgStrength">去背強度</label>
                                 <div class="range-row">
-                                    <div class="ts-range"><input type="range" id="bgThreshold" min="0" max="60" value="12"></div>
-                                    <div class="ts-input"><input type="number" id="bgThresholdValue" min="0" max="60" value="12" aria-label="顏色距離門檻數值"></div>
+                                    <div class="ts-range"><input type="range" id="bgStrength" min="0" max="100" value="50"></div>
+                                    <div class="ts-input"><input type="number" id="bgStrengthValue" min="0" max="100" value="50" aria-label="去背強度數值"></div>
                                 </div>
-                            </div>
-
-                            <div class="has-top-spaced-small">
-                                <label class="ts-text is-label" for="bgSoftness">邊緣柔化</label>
-                                <div class="range-row">
-                                    <div class="ts-range"><input type="range" id="bgSoftness" min="1" max="40" value="10"></div>
-                                    <div class="ts-input"><input type="number" id="bgSoftnessValue" min="1" max="40" value="10" aria-label="邊緣柔化數值"></div>
-                                </div>
-                            </div>
-
-                            <div class="has-top-spaced-small">
-                                <label class="ts-text is-label" for="bgRadius">背景估算半徑</label>
-                                <div class="range-row">
-                                    <div class="ts-range"><input type="range" id="bgRadius" min="4" max="200" value="40"></div>
-                                    <div class="ts-input"><input type="number" id="bgRadiusValue" min="4" max="200" value="40" aria-label="背景估算半徑數值"></div>
-                                </div>
-                            </div>
-
-                            <div class="has-top-spaced-small">
-                                <label class="ts-text is-label" for="isolationSuppress">孤立雜點抑制</label>
-                                <div class="range-row">
-                                    <div class="ts-range"><input type="range" id="isolationSuppress" min="0" max="100" value="40"></div>
-                                    <div class="ts-input"><input type="number" id="isolationSuppressValue" min="0" max="100" value="40" aria-label="孤立雜點抑制數值"></div>
-                                </div>
+                                <div class="has-top-spaced-small ts-text is-description">數值愈高愈積極把接近背景色的區域判定為背景；實心筆跡的顏色跟背景差異遠遠超過安全範圍，不會因為調整這個數值而變透明。</div>
                             </div>
 
                             <div class="ts-divider has-vertically-spaced"></div>

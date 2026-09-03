@@ -25,6 +25,25 @@ function normalizeLoadedPiece(piece) {
             sel.loops = sel.loops.map((loop) => ({ mode: 'add', ...loop }));
         }
     }
+
+    // 舊版 threshold/softness 是使用者當初逐一物件手動調過的數值（同一個 RGB 距離尺度，
+    // 現在演算法改回同一套 RGB 距離運算後兩者完全相容）——不能丟掉，很多物件的最佳效果
+    // 就是靠這組數值調出來的（例如同一個專案裡從 threshold:2 到 threshold:124 都有，
+    // 差異很大，套統一預設值只會讓一部分物件變差）。維持 strength 欄位是為了滑桿有個
+    // 起始位置＋往後使用者微調時的介面模型，但只要 threshold/softness 還在，
+    // computeMask() 一律優先採用這兩個原始數值，確保重新開啟舊專案至少跟當初存檔時一樣好。
+    if (piece.bgRemoval && piece.bgRemoval.strength === undefined) {
+        piece.bgRemoval = {
+            enabled: piece.bgRemoval.enabled ?? true,
+            sampleColor: piece.bgRemoval.sampleColor ?? { r: 255, g: 255, b: 255 },
+            strength: 50,
+            ...(piece.bgRemoval.threshold !== undefined && piece.bgRemoval.softness !== undefined
+                ? { threshold: piece.bgRemoval.threshold, softness: piece.bgRemoval.softness }
+                : {}),
+        };
+    }
+    if (piece.enhance) delete piece.enhance;
+
     return piece;
 }
 

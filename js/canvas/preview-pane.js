@@ -1,18 +1,15 @@
 // 右側「即時預覽」與 PNG 匯出共用的純渲染管線。renderGeometry() 先做「裁切／套索遮罩 →
-// 橡皮擦擦除 → 旋轉 → 降採樣」這段跟顏色無關的幾何處理，得到 originalImageData（未經任何
-// 增強/去背，是使用者原始掃描的真實像素）；renderPiece()/renderMaskPreview()/
-// renderOverlayPreview() 三者共用的 computeMaskForPiece() 再從 originalImageData 複製一份
-// 「分析圖」套用對比度/亮度增強＋computeMask() 算出遮罩，最終輸出永遠用
-// compositeOriginalWithMask() 合成——增強只影響「抓不抓得到筆跡」，不會滲入最終顏色。
-// 非破壞性——原始掃描位元組從不被修改，橡皮擦筆刷跟增強參數都只是存在 piece 上的資料，
+// 橡皮擦擦除 → 旋轉 → 降採樣」這段跟顏色無關的幾何處理，得到 originalImageData（使用者
+// 原始掃描的真實像素）；renderPiece()/renderMaskPreview()/renderOverlayPreview() 三者共用的
+// computeMaskForPiece() 直接對 originalImageData 呼叫 computeMask() 算出遮罩，最終輸出用
+// compositeOriginalWithMask() 合成。
+// 非破壞性——原始掃描位元組從不被修改，橡皮擦筆刷跟去背參數都只是存在 piece 上的資料，
 // 每次都是重新算過，不是疊加在前一次算完的像素上。
-// 增強放在去背「之前」：淡色筆跡（例如很淺的彩色筆）跟背景的顏色距離本來就小，
-// 拉對比度能把這個距離撐大，讓它跨過去背的顏色距離門檻被判定為前景——如果增強放在去背
-// 之後（只調整已經算完 alpha 的像素 RGB），選取範圍不會因此變大，淡色筆跡還是會被吃掉，
-// 使用者只會看到顏色被調整、內容沒有變多。背景取樣色也要套用同一套增強公式再拿去比對，
-// 否則「拉開的像素」跟「沒拉開的取樣色」基準點不一致，距離計算會失真。
-// 互動預覽限制在 maxPreviewDim 內以維持效能；匯出一律以完整原始解析度重新渲染，
-// 因此「預覽縮圖」與「最終輸出」不是同一份縮小過的資料。
+// 去背分析一律至少在 maxPreviewDim 解析度上進行（見 renderGeometry() 內的 analysisDim），
+// 呼叫端要的顯示尺寸（例如作品清單縮圖只要 160px）只在算完之後、回傳前才縮小；
+// 這樣清單縮圖跟右側即時預覽即使顯示尺寸不同，去背分析永遠是同一個解析度算出來的，
+// 不會因為縮圖太小讓局部背景估算半徑相對失真而跟預覽兜不起來。匯出（maxDim: 0）
+// 則一律以完整原始解析度分析＋輸出，不受這個下限影響。
 
 import { store } from '../state.js';
 import { selectionBounds } from '../tools/transform.js';
@@ -121,10 +118,13 @@ async function renderGeometry(piece, opts = {}) {
         ctx = rctx;
     }
 
-    // 降採樣放在去背之前：縮圖／預覽只需要 maxDim 內的像素量，逐像素去背卻是照 canvas
-    // 當下尺寸算成本——先縮小再去背，才不會為了畫一張 160px 縮圖去跑一次全解析度逐像素運算。
-    // 匯出（maxDim: 0）不受影響，downscaleCanvas 對 !maxDim 是 no-op，仍在完整原始解析度去背。
-    canvas = downscaleCanvas(canvas, opts.maxDim ?? maxPreviewDim);
+    // 去背分析一律至少在 maxPreviewDim 這個尺度上進行，不會因為呼叫端要的是縮圖（160px）
+    // 就跟著縮到那麼小——resolveBgRadius() 的 MIN_BG_RADIUS 下限在畫面只有幾十像素寬時佔比
+    // 會被放大很多倍，局部背景估算因此失真，縮圖跟其他解析度算出的去背結果會兜不起來
+    // （清單縮圖跟右側預覽看起來不一樣）。實際要縮到多小顯示，交給各 render 函式最後一步處理。
+    // 匯出（maxDim: 0）不受影響，一律用完整原始解析度分析。
+    const analysisDim = opts.maxDim === 0 ? 0 : Math.max(opts.maxDim ?? maxPreviewDim, maxPreviewDim);
+    canvas = downscaleCanvas(canvas, analysisDim);
     ctx = canvas.getContext('2d');
 
     const originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -132,31 +132,17 @@ async function renderGeometry(piece, opts = {}) {
 }
 
 /**
- * 從 originalImageData 複製一份分析圖套用增強，算出去背遮罩；originalImageData 本身不受影響。
+ * 對 originalImageData 算出去背遮罩。
  * @param {object} piece
  * @param {ImageData} originalImageData
  * @returns {Float32Array|null} bgRemoval 未啟用時回傳 null
  */
 function computeMaskForPiece(piece, originalImageData) {
     if (!piece.bgRemoval?.enabled) return null;
-    const { width, height } = originalImageData;
-    const analysisCanvas = new OffscreenCanvas(width, height);
-    const actx = analysisCanvas.getContext('2d');
-    actx.putImageData(originalImageData, 0, 0);
-
-    const hasEnhance = !!(piece.enhance?.contrast || piece.enhance?.brightness);
-    if (hasEnhance) applyEnhance(actx, analysisCanvas, piece.enhance);
-
-    const analysisImageData = actx.getImageData(0, 0, width, height);
-    const sampleColorEnhanced = hasEnhance
-        ? enhanceColor(piece.bgRemoval.sampleColor, piece.enhance)
-        : piece.bgRemoval.sampleColor;
-
-    return computeMask(analysisImageData, sampleColorEnhanced, {
+    return computeMask(originalImageData, piece.bgRemoval.sampleColor, {
+        strength: piece.bgRemoval.strength,
         threshold: piece.bgRemoval.threshold,
         softness: piece.bgRemoval.softness,
-        bgRadius: piece.bgRemoval.bgRadius,
-        isolationSuppress: piece.bgRemoval.isolationSuppress,
     });
 }
 
@@ -173,19 +159,17 @@ export async function renderPiece(piece, opts = {}) {
 
     const maskAlpha = computeMaskForPiece(piece, originalImageData);
     if (maskAlpha) {
-        const composited = compositeOriginalWithMask(originalImageData, maskAlpha, piece.bgRemoval.sampleColor, {
-            bgRadius: piece.bgRemoval.bgRadius,
-        });
+        const composited = compositeOriginalWithMask(originalImageData, maskAlpha, piece.bgRemoval.sampleColor);
         canvas.getContext('2d').putImageData(composited, 0, 0);
     }
 
-    return canvas;
+    return downscaleCanvas(canvas, opts.maxDim ?? maxPreviewDim);
 }
 
-/** 「原始」模式：完全跳過增強／去背，顯示使用者原始掃描的真實顏色。 */
+/** 「原始」模式：完全跳過去背，顯示使用者原始掃描的真實顏色。 */
 export async function renderOriginalPreview(piece, opts = {}) {
     const geo = await renderGeometry(piece, opts);
-    return geo ? geo.canvas : null;
+    return geo ? downscaleCanvas(geo.canvas, opts.maxDim ?? maxPreviewDim) : null;
 }
 
 /** 「遮罩」模式：把去背遮罩轉成灰階圖（黑=完全透明、白=完全保留、灰=部分透明）。 */
@@ -206,7 +190,7 @@ export async function renderMaskPreview(piece, opts = {}) {
         od[p + 3] = 255;
     }
     canvas.getContext('2d').putImageData(out, 0, 0);
-    return canvas;
+    return downscaleCanvas(canvas, opts.maxDim ?? maxPreviewDim);
 }
 
 /** 「疊加」模式：原圖上疊一層以遮罩 alpha 為不透明度的橘色 tint，標示目前會保留的範圍。 */
@@ -215,7 +199,7 @@ export async function renderOverlayPreview(piece, opts = {}) {
     if (!geo) return null;
     const { canvas, originalImageData } = geo;
     const maskAlpha = computeMaskForPiece(piece, originalImageData);
-    if (!maskAlpha) return canvas;
+    if (!maskAlpha) return downscaleCanvas(canvas, opts.maxDim ?? maxPreviewDim);
 
     const ctx = canvas.getContext('2d');
     const { width, height } = originalImageData;
@@ -232,7 +216,7 @@ export async function renderOverlayPreview(piece, opts = {}) {
     }
     tctx.putImageData(tintData, 0, 0);
     ctx.drawImage(tint, 0, 0);
-    return canvas;
+    return downscaleCanvas(canvas, opts.maxDim ?? maxPreviewDim);
 }
 
 // 橡皮擦：把每一筆存下來的路徑（圓頭圓角線段，寬度＝筆刷直徑）用 destination-out 直接從
@@ -266,48 +250,6 @@ function eraseStrokesInPlace(ctx, strokes, offsetX, offsetY) {
         ctx.stroke();
     }
     ctx.restore();
-}
-
-function clamp8(v) {
-    return v < 0 ? 0 : v > 255 ? 255 : v | 0;
-}
-
-function contrastFactor(contrast) {
-    return (259 * (contrast + 255)) / (255 * (259 - contrast));
-}
-
-function enhanceChannel(value, factor, brightness) {
-    return clamp8(factor * (value - 128) + 128 + brightness);
-}
-
-// 標準對比度/亮度線性調整（僅動 RGB，alpha 不變）：對比度 -100~100 換算成縮放係數，
-// 以 128 為支點放大/縮小到中灰的距離；亮度 -100~100 是加法位移。全透明像素略過不算，
-// 省一點運算（去背後大面積透明邊界很常見）。
-function applyEnhance(ctx, canvas, enhance) {
-    const contrast = enhance?.contrast ?? 0;
-    const brightness = enhance?.brightness ?? 0;
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
-    const factor = contrastFactor(contrast);
-    for (let i = 0; i < data.length; i += 4) {
-        if (data[i + 3] === 0) continue;
-        data[i] = enhanceChannel(data[i], factor, brightness);
-        data[i + 1] = enhanceChannel(data[i + 1], factor, brightness);
-        data[i + 2] = enhanceChannel(data[i + 2], factor, brightness);
-    }
-    ctx.putImageData(imageData, 0, 0);
-}
-
-// 背景取樣色要套用跟像素同一套增強公式才能拿去算顏色距離，見上面 renderPiece 裡的說明。
-function enhanceColor(color, enhance) {
-    const contrast = enhance?.contrast ?? 0;
-    const brightness = enhance?.brightness ?? 0;
-    const factor = contrastFactor(contrast);
-    return {
-        r: enhanceChannel(color.r, factor, brightness),
-        g: enhanceChannel(color.g, factor, brightness),
-        b: enhanceChannel(color.b, factor, brightness),
-    };
 }
 
 /** 匯出一律以完整原始解析度重新渲染，不是把互動預覽的畫面截圖下來；並裁掉選取外框多餘的透明邊界。 */

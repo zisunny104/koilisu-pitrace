@@ -54,16 +54,30 @@ function wireDropdownToggle(trigger, menu, onToggle) {
     return { open, close, toggle };
 }
 
-// 讓 range 滑桿與旁邊的數字輸入框互相同步：拖曳滑桿即時反映到數字框，
-// 放開/變更才寫回 store；打數字框則反過來即時同步滑桿，blur/Enter 時夾在 min~max 內寫回 store。
+// 讓 range 滑桿與旁邊的數字輸入框互相同步：拖曳滑桿即時反映到數字框，同時以
+// requestAnimationFrame 節流寫回 store（去背分析非同步、無 Worker，若每個 input 事件都
+// 直接寫回會在拖曳時瘋狂疊加運算）——同一時間最多只有一次排隊中的套用，拖到哪就吃到哪，
+// 不用放開滑桿才看得到結果；放開/變更時再保證套用一次最終值。打數字框則反過來即時同步
+// 滑桿，blur/Enter 時夾在 min~max 內寫回 store。
 function bindRangeNumberPair(rangeId, numberId, apply) {
     const range = el(rangeId);
     const number = el(numberId);
     const min = Number(range.min);
     const max = Number(range.max);
 
+    let rafPending = false;
+    const scheduleLiveApply = () => {
+        if (rafPending) return;
+        rafPending = true;
+        requestAnimationFrame(() => {
+            rafPending = false;
+            apply(Number(range.value));
+        });
+    };
+
     range.addEventListener('input', () => {
         number.value = range.value;
+        scheduleLiveApply();
     });
     range.addEventListener('change', () => apply(Number(range.value)));
 
@@ -805,23 +819,11 @@ function wirePropertiesPanel(statusEl) {
         announce(statusEl, '已清除所有套索區塊');
     });
 
-    bindRangeNumberPair('enhanceContrast', 'enhanceContrastValue', (n) => {
-        const piece = store.getActivePiece();
-        if (!piece) return;
-        store.updatePiece(piece.id, { enhance: { ...piece.enhance, contrast: n } });
-    });
-
-    bindRangeNumberPair('enhanceBrightness', 'enhanceBrightnessValue', (n) => {
-        const piece = store.getActivePiece();
-        if (!piece) return;
-        store.updatePiece(piece.id, { enhance: { ...piece.enhance, brightness: n } });
-    });
-
     el('bgRemovalEnabled').addEventListener('change', (evt) => {
         const piece = store.getActivePiece();
         if (!piece) return;
         store.updatePiece(piece.id, { bgRemoval: { ...piece.bgRemoval, enabled: evt.target.checked } });
-        syncEnhanceDisabledState(evt.target.checked);
+        syncBgStrengthDisabledState(evt.target.checked);
     });
 
     ['bgSampleR', 'bgSampleG', 'bgSampleB'].forEach((id) => {
@@ -857,28 +859,15 @@ function wirePropertiesPanel(statusEl) {
         announce(statusEl, `已自動取樣背景色 RGB ${color.r}, ${color.g}, ${color.b}`);
     });
 
-    bindRangeNumberPair('bgThreshold', 'bgThresholdValue', (n) => {
+    bindRangeNumberPair('bgStrength', 'bgStrengthValue', (n) => {
         const piece = store.getActivePiece();
         if (!piece) return;
-        store.updatePiece(piece.id, { bgRemoval: { ...piece.bgRemoval, threshold: n } });
-    });
-
-    bindRangeNumberPair('bgSoftness', 'bgSoftnessValue', (n) => {
-        const piece = store.getActivePiece();
-        if (!piece) return;
-        store.updatePiece(piece.id, { bgRemoval: { ...piece.bgRemoval, softness: n } });
-    });
-
-    bindRangeNumberPair('bgRadius', 'bgRadiusValue', (n) => {
-        const piece = store.getActivePiece();
-        if (!piece) return;
-        store.updatePiece(piece.id, { bgRemoval: { ...piece.bgRemoval, bgRadius: n } });
-    });
-
-    bindRangeNumberPair('isolationSuppress', 'isolationSuppressValue', (n) => {
-        const piece = store.getActivePiece();
-        if (!piece) return;
-        store.updatePiece(piece.id, { bgRemoval: { ...piece.bgRemoval, isolationSuppress: n } });
+        // 手動拉動滑桿代表使用者要用新的單一強度模型取代舊專案帶進來的 threshold/softness
+        // 手動調校值——不清掉的話 computeMask() 會繼續優先採用舊值，滑桿會變得像沒作用一樣。
+        const bgRemoval = { ...piece.bgRemoval, strength: n };
+        delete bgRemoval.threshold;
+        delete bgRemoval.softness;
+        store.updatePiece(piece.id, { bgRemoval });
     });
 
     el('svgVectorEnabled').addEventListener('change', (evt) => {
@@ -976,13 +965,11 @@ function renderLassoLoopList(container, piece, statusEl) {
     });
 }
 
-// 對比度/亮度只影響去背分析用的遮罩，去背關閉時完全沒有可見效果，停用滑桿避免使用者疑惑。
-function syncEnhanceDisabledState(bgRemovalEnabled) {
+// 去背關閉時去背強度完全沒有可見效果，停用滑桿避免使用者疑惑。
+function syncBgStrengthDisabledState(bgRemovalEnabled) {
     const disabled = !bgRemovalEnabled;
-    el('enhanceContrast').disabled = disabled;
-    el('enhanceContrastValue').disabled = disabled;
-    el('enhanceBrightness').disabled = disabled;
-    el('enhanceBrightnessValue').disabled = disabled;
+    el('bgStrength').disabled = disabled;
+    el('bgStrengthValue').disabled = disabled;
 }
 
 function syncPropertiesPanel(statusEl) {
@@ -1016,25 +1003,14 @@ function syncPropertiesPanel(statusEl) {
         el('btnClearLasso').disabled = !piece.selection.loops?.length;
     }
 
-    el('enhanceContrast').value = piece.enhance?.contrast ?? 0;
-    el('enhanceContrastValue').value = piece.enhance?.contrast ?? 0;
-    el('enhanceBrightness').value = piece.enhance?.brightness ?? 0;
-    el('enhanceBrightnessValue').value = piece.enhance?.brightness ?? 0;
-
     el('bgRemovalEnabled').checked = piece.bgRemoval.enabled;
-    syncEnhanceDisabledState(piece.bgRemoval.enabled);
+    syncBgStrengthDisabledState(piece.bgRemoval.enabled);
     el('bgSampleR').value = piece.bgRemoval.sampleColor.r;
     el('bgSampleG').value = piece.bgRemoval.sampleColor.g;
     el('bgSampleB').value = piece.bgRemoval.sampleColor.b;
     el('bgSampleSwatch').style.backgroundColor = `rgb(${piece.bgRemoval.sampleColor.r}, ${piece.bgRemoval.sampleColor.g}, ${piece.bgRemoval.sampleColor.b})`;
-    el('bgThreshold').value = piece.bgRemoval.threshold;
-    el('bgThresholdValue').value = piece.bgRemoval.threshold;
-    el('bgSoftness').value = piece.bgRemoval.softness;
-    el('bgSoftnessValue').value = piece.bgRemoval.softness;
-    el('bgRadius').value = piece.bgRemoval.bgRadius ?? 40;
-    el('bgRadiusValue').value = piece.bgRemoval.bgRadius ?? 40;
-    el('isolationSuppress').value = piece.bgRemoval.isolationSuppress ?? 40;
-    el('isolationSuppressValue').value = piece.bgRemoval.isolationSuppress ?? 40;
+    el('bgStrength').value = piece.bgRemoval.strength ?? 50;
+    el('bgStrengthValue').value = piece.bgRemoval.strength ?? 50;
 
     el('svgVectorEnabled').checked = piece.svgExport?.enabled ?? false;
     el('svgSimplify').value = piece.svgExport?.simplifyTolerance ?? 0.75;
