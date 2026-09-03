@@ -65,6 +65,15 @@ function cropToOpaqueBounds(canvas) {
     return cropped;
 }
 
+// piece.id -> 最近一次算好的幾何結果（裁切/選取遮罩/擦除/旋轉/降採樣後的 canvas＋originalImageData）。
+// 這段跟去背參數（強度/取樣色）完全無關，但去背強度滑桿拖曳時最容易被重複呼叫；快取起來，
+// 只有裁切/選取/擦除/旋轉/來源點陣圖真的變了才重建，避免每次微調滑桿都重跑一次裁切＋
+// getImageData 讀回（整條管線裡最貴的部分）。
+const geometryCache = new Map();
+// 開新專案／開啟專案／新增或刪除掃描與作品等結構性變動時整批清掉，避免快取隨 session 長度
+// 無限累積；一般編輯（拖曳滑桿、調整選取）只會觸發 piece-changed，不會清到這裡。
+store.addEventListener('project-changed', () => geometryCache.clear());
+
 /**
  * 幾何處理管線（裁切／套索遮罩 → 橡皮擦擦除 → 旋轉 → 降採樣），跟顏色無關，
  * 四種預覽模式與 PNG/SVG 匯出都共用這一段。
@@ -76,6 +85,24 @@ async function renderGeometry(piece, opts = {}) {
     if (!piece) return null;
     const bitmap = await store.getScanBitmap(piece.scanId);
     if (!bitmap) return null;
+
+    const analysisDim = opts.maxDim === 0 ? 0 : Math.max(opts.maxDim ?? maxPreviewDim, maxPreviewDim);
+    const cached = geometryCache.get(piece.id);
+    if (
+        cached &&
+        cached.bitmap === bitmap &&
+        cached.selection === piece.selection &&
+        cached.eraseStrokes === piece.eraseStrokes &&
+        cached.rotation === piece.rotation &&
+        cached.analysisDim === analysisDim
+    ) {
+        // 呼叫端會直接在回傳的 canvas 上疊繪/覆寫（合成去背結果、疊加遮罩色塊等），不能把
+        // 快取的乾淨底圖直接借出去，否則下次命中快取會拿到被污染過的畫面，回傳複製品即可，
+        // 這一步是單純的 canvas-to-canvas 複製，遠比重新裁切＋getImageData 便宜。
+        const copy = new OffscreenCanvas(cached.canvas.width, cached.canvas.height);
+        copy.getContext('2d').drawImage(cached.canvas, 0, 0);
+        return { canvas: copy, originalImageData: cached.originalImageData };
+    }
 
     const bounds = selectionBounds(piece);
     if (!bounds || bounds.w <= 0 || bounds.h <= 0) return null;
@@ -123,12 +150,23 @@ async function renderGeometry(piece, opts = {}) {
     // 會被放大很多倍，局部背景估算因此失真，縮圖跟其他解析度算出的去背結果會兜不起來
     // （清單縮圖跟右側預覽看起來不一樣）。實際要縮到多小顯示，交給各 render 函式最後一步處理。
     // 匯出（maxDim: 0）不受影響，一律用完整原始解析度分析。
-    const analysisDim = opts.maxDim === 0 ? 0 : Math.max(opts.maxDim ?? maxPreviewDim, maxPreviewDim);
     canvas = downscaleCanvas(canvas, analysisDim);
     ctx = canvas.getContext('2d');
 
     const originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    return { canvas, originalImageData };
+    geometryCache.set(piece.id, {
+        bitmap,
+        selection: piece.selection,
+        eraseStrokes: piece.eraseStrokes,
+        rotation: piece.rotation,
+        analysisDim,
+        canvas,
+        originalImageData,
+    });
+
+    const copy = new OffscreenCanvas(canvas.width, canvas.height);
+    copy.getContext('2d').drawImage(canvas, 0, 0);
+    return { canvas: copy, originalImageData };
 }
 
 /**
