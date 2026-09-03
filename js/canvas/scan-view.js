@@ -71,6 +71,7 @@ export class ScanView {
         this._touchPoints = new Map(); // pointerId -> {x,y}，只存 touch 類型，用來偵測雙指縮放
         this._pinch = null;
         this._maskCache = null; // 套索選取遮罩快取（見 _drawSelections），避免平移/縮放/拖曳時每幀重建
+        this._eraseCache = null; // 橡皮擦筆觸標示遮罩快取，原理同上
 
         canvas.addEventListener('pointerdown', (e) => this._onPointerDown(e));
         canvas.addEventListener('pointermove', (e) => this._onPointerMove(e));
@@ -572,6 +573,57 @@ export class ScanView {
                     }
                     ctx.restore();
                 }
+            }
+
+            // 橡皮擦筆觸標示：半透明紅色疊在已擦除的區域，不然工作區看不出擦到哪——效果只會在
+            // 「即時預覽」窗格才看得到。把所有筆觸先併成一張黑白遮罩再用 source-in 換色，避免
+            // 筆觸互相重疊處因為疊了多層半透明色而顏色不均。
+            if (isActive && this.bitmap && piece.eraseStrokes?.length) {
+                const cache = this._eraseCache;
+                let eraseTint;
+                if (
+                    cache &&
+                    cache.pieceId === piece.id &&
+                    cache.eraseStrokes === piece.eraseStrokes &&
+                    cache.width === this.bitmap.width &&
+                    cache.height === this.bitmap.height
+                ) {
+                    eraseTint = cache.eraseTint;
+                } else {
+                    const mask = new OffscreenCanvas(this.bitmap.width, this.bitmap.height);
+                    const maskCtx = mask.getContext('2d');
+                    maskCtx.fillStyle = '#000';
+                    maskCtx.strokeStyle = '#000';
+                    maskCtx.lineCap = 'round';
+                    maskCtx.lineJoin = 'round';
+                    for (const stroke of piece.eraseStrokes) {
+                        const path = stroke.path ?? [];
+                        if (!path.length) continue;
+                        const r = stroke.radius ?? 40;
+                        if (path.length === 1) {
+                            maskCtx.beginPath();
+                            maskCtx.arc(path[0].x, path[0].y, r, 0, Math.PI * 2);
+                            maskCtx.fill();
+                            continue;
+                        }
+                        maskCtx.lineWidth = r * 2;
+                        maskCtx.beginPath();
+                        path.forEach((p, i) => (i === 0 ? maskCtx.moveTo(p.x, p.y) : maskCtx.lineTo(p.x, p.y)));
+                        maskCtx.stroke();
+                    }
+                    maskCtx.globalCompositeOperation = 'source-in';
+                    maskCtx.fillStyle = 'rgba(239,68,68,0.45)';
+                    maskCtx.fillRect(0, 0, this.bitmap.width, this.bitmap.height);
+                    eraseTint = mask;
+                    this._eraseCache = {
+                        pieceId: piece.id,
+                        eraseStrokes: piece.eraseStrokes,
+                        width: this.bitmap.width,
+                        height: this.bitmap.height,
+                        eraseTint,
+                    };
+                }
+                ctx.drawImage(eraseTint, 0, 0);
             }
 
             ctx.lineWidth = (isActive ? 2.5 : 1.5) / this.scale;

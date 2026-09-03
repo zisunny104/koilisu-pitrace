@@ -831,6 +831,13 @@ function wirePropertiesPanel(statusEl) {
         announce(statusEl, '已清除所有套索區塊');
     });
 
+    el('btnClearErase').addEventListener('click', () => {
+        const piece = store.getActivePiece();
+        if (!piece || !piece.eraseStrokes?.length) return;
+        store.updatePiece(piece.id, { eraseStrokes: [] });
+        announce(statusEl, '已清除所有橡皮擦筆觸');
+    });
+
     el('bgRemovalEnabled').addEventListener('change', (evt) => {
         const piece = store.getActivePiece();
         if (!piece) return;
@@ -977,6 +984,42 @@ function renderLassoLoopList(container, piece, statusEl) {
     });
 }
 
+function renderEraseStrokeList(container, piece, statusEl) {
+    container.innerHTML = '';
+    const strokes = piece.eraseStrokes || [];
+    if (!strokes.length) {
+        const empty = document.createElement('div');
+        empty.className = 'ts-text is-description';
+        empty.textContent = '尚未使用橡皮擦';
+        container.appendChild(empty);
+        return;
+    }
+    strokes.forEach((stroke, i) => {
+        const row = document.createElement('div');
+        row.className = 'lasso-loop-row';
+
+        const label = document.createElement('span');
+        label.className = 'ts-text';
+        label.textContent = `筆觸 ${i + 1}（半徑 ${stroke.radius ?? 40}px）`;
+        row.appendChild(label);
+
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'ts-button is-icon is-small';
+        delBtn.setAttribute('aria-label', `刪除橡皮擦筆觸 ${i + 1}`);
+        delBtn.innerHTML = '<span class="ts-icon is-xmark-icon" aria-hidden="true"></span>';
+        delBtn.addEventListener('click', () => {
+            const next = strokes.slice();
+            next.splice(i, 1);
+            store.updatePiece(piece.id, { eraseStrokes: next });
+            announce(statusEl, `已刪除橡皮擦筆觸 ${i + 1}`);
+        });
+        row.appendChild(delBtn);
+
+        container.appendChild(row);
+    });
+}
+
 // 去背關閉時去背強度完全沒有可見效果，停用滑桿避免使用者疑惑。
 function syncBgStrengthDisabledState(bgRemovalEnabled) {
     const disabled = !bgRemovalEnabled;
@@ -1014,6 +1057,9 @@ function syncPropertiesPanel(statusEl) {
         renderLassoLoopList(el('lassoLoopList'), piece, statusEl);
         el('btnClearLasso').disabled = !piece.selection.loops?.length;
     }
+
+    renderEraseStrokeList(el('eraseStrokeList'), piece, statusEl);
+    el('btnClearErase').disabled = !piece.eraseStrokes?.length;
 
     el('bgRemovalEnabled').checked = piece.bgRemoval.enabled;
     syncBgStrengthDisabledState(piece.bgRemoval.enabled);

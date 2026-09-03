@@ -1146,6 +1146,18 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                 </div>
                             </div>
 
+                            <!-- 橡皮擦筆觸清單（可個別刪除／全部清除，不必整個 Ctrl+Z） -->
+                            <div id="eraseFieldsGroup" class="has-top-spaced">
+                                <div class="ts-text is-label">橡皮擦筆觸</div>
+                                <div id="eraseStrokeList" class="has-top-spaced-small"></div>
+                                <div class="ts-wrap has-top-spaced-small">
+                                    <button id="btnClearErase" class="ts-button is-small is-outlined is-negative is-start-icon">
+                                        <span class="ts-icon is-trash-icon" aria-hidden="true"></span>
+                                        清除擦除
+                                    </button>
+                                </div>
+                            </div>
+
                             <div class="ts-divider has-vertically-spaced"></div>
 
                             <div class="ts-header is-start-icon">
