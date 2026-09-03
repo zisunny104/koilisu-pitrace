@@ -70,6 +70,7 @@ export class ScanView {
         this._rafId = null;
         this._touchPoints = new Map(); // pointerId -> {x,y}，只存 touch 類型，用來偵測雙指縮放
         this._pinch = null;
+        this._maskCache = null; // 套索選取遮罩快取（見 _drawSelections），避免平移/縮放/拖曳時每幀重建
 
         canvas.addEventListener('pointerdown', (e) => this._onPointerDown(e));
         canvas.addEventListener('pointermove', (e) => this._onPointerMove(e));
@@ -530,26 +531,44 @@ export class ScanView {
                             ctx.fillRect(cx, cy, cw, ch);
                         }
                     } else {
-                        const mask = buildSelectionMask(closedLoops, this.bitmap.width, this.bitmap.height);
+                        // 遮罩畫布只跟「選取內容＋圖片尺寸」有關，跟平移/縮放/套索草稿無關，快取起來
+                        // 重複使用——不快取的話，拖曳套索、加減選、甚至單純平移畫面時，每一幀都要在
+                        // 全解析度（可能上千萬像素）的 OffscreenCanvas 上重新描邊＋合成，會嚴重掉幀。
+                        const cache = this._maskCache;
+                        let dimLayer, tinted;
+                        if (
+                            cache &&
+                            cache.pieceId === piece.id &&
+                            cache.selection === piece.selection &&
+                            cache.width === this.bitmap.width &&
+                            cache.height === this.bitmap.height
+                        ) {
+                            ({ dimLayer, tinted } = cache);
+                        } else {
+                            const mask = buildSelectionMask(closedLoops, this.bitmap.width, this.bitmap.height);
 
-                        // 變暗遮罩必須先在獨立的 offscreen canvas 疊好、挖好洞，才能整片貼回主畫布——
-                        // 不能直接對 ctx 用 destination-out，那樣會連同稍早畫上去的原圖一起擦除，
-                        // 選取範圍反而變成完全透空的洞（穿透看到畫布底色），而不是「顯示原圖」。
-                        const dimLayer = new OffscreenCanvas(this.bitmap.width, this.bitmap.height);
-                        const dimCtx = dimLayer.getContext('2d');
-                        dimCtx.fillStyle = 'rgba(15,23,42,0.5)';
-                        dimCtx.fillRect(0, 0, this.bitmap.width, this.bitmap.height);
-                        dimCtx.globalCompositeOperation = 'destination-out';
-                        dimCtx.drawImage(mask, 0, 0);
+                            // 變暗遮罩必須先在獨立的 offscreen canvas 疊好、挖好洞，才能整片貼回主畫布——
+                            // 不能直接對 ctx 用 destination-out，那樣會連同稍早畫上去的原圖一起擦除，
+                            // 選取範圍反而變成完全透空的洞（穿透看到畫布底色），而不是「顯示原圖」。
+                            dimLayer = new OffscreenCanvas(this.bitmap.width, this.bitmap.height);
+                            const dimCtx = dimLayer.getContext('2d');
+                            dimCtx.fillStyle = 'rgba(15,23,42,0.5)';
+                            dimCtx.fillRect(0, 0, this.bitmap.width, this.bitmap.height);
+                            dimCtx.globalCompositeOperation = 'destination-out';
+                            dimCtx.drawImage(mask, 0, 0);
+
+                            // mask 的黑色版本已經用完，直接原地換成半透明橘色（source-in 一樣不能對主畫布
+                            // 做，要在 mask 自己的 offscreen canvas 上換色後才用 source-over 疊上來）。
+                            const maskCtx = mask.getContext('2d');
+                            maskCtx.globalCompositeOperation = 'source-in';
+                            maskCtx.fillStyle = tintColor;
+                            maskCtx.fillRect(0, 0, this.bitmap.width, this.bitmap.height);
+                            tinted = mask;
+
+                            this._maskCache = { pieceId: piece.id, selection: piece.selection, width: this.bitmap.width, height: this.bitmap.height, dimLayer, tinted };
+                        }
                         ctx.drawImage(dimLayer, 0, 0);
-
-                        // mask 的黑色版本已經用完，直接原地換成半透明橘色再疊上去（source-in 一樣不能
-                        // 對主畫布做，要在 mask 自己的 offscreen canvas 上換色後才用 source-over 疊上來）。
-                        const maskCtx = mask.getContext('2d');
-                        maskCtx.globalCompositeOperation = 'source-in';
-                        maskCtx.fillStyle = tintColor;
-                        maskCtx.fillRect(0, 0, this.bitmap.width, this.bitmap.height);
-                        ctx.drawImage(mask, 0, 0);
+                        ctx.drawImage(tinted, 0, 0);
                     }
                     ctx.restore();
                 }
