@@ -57,8 +57,8 @@ export function getPieceColor(piece) {
 
 const HISTORY_LIMIT = 50;
 const HISTORY_COALESCE_MS = 500;
-// 防解壓縮炸彈：拒絕解碼後超過此像素量的圖片（約 7746x7746，600dpi A4/A3 掃描仍有餘裕），
-// 精心壓縮成小檔案、解碼後卻是數十億像素的惡意 PNG 會被擋下，避免分頁記憶體暴增當機。
+// 逐像素運算（去背、遮罩、匯出）能撐住的上限（約 7746x7746，600dpi A4/A3 掃描仍有餘裕）。
+// 超過這個量的掃描圖不會被拒絕，而是等比例縮小＋轉 WebP 後才進入編輯流程（見 _downscaleScan）。
 const MAX_SCAN_PIXELS = 60_000_000;
 // 同時最多快取幾張已解碼的 ImageBitmap（LRU，每張上限約 240MB＝60MP×4bytes）：
 // 專案掃描圖一多，全部解碼常駐會讓分頁記憶體隨掃描圖數量線性成長，
@@ -249,16 +249,36 @@ class Store extends EventTarget {
         const scan = this.project.scans.find((s) => s.id === scanId);
         if (!scan) return null;
         const blob = new Blob([scan.bytes], { type: scan.mime });
-        const bitmap = await createImageBitmap(blob);
+        let bitmap = await createImageBitmap(blob);
         if (bitmap.width * bitmap.height > MAX_SCAN_PIXELS) {
-            const { width, height } = bitmap;
-            bitmap.close();
-            this._bitmapCache.set(scanId, null);
-            this.emit('scan-oversized', { scanId, width, height });
-            return null;
+            bitmap = await this._downscaleScan(scan, bitmap);
         }
         this._cacheBitmap(scanId, bitmap);
         return bitmap;
+    }
+
+    // 超過 MAX_SCAN_PIXELS 的掃描圖：等比例縮小到上限內、重新編碼成 WebP，就地取代
+    // scan.bytes/width/height/dpi（dpi 依同比例縮小才能維持 SVG mm 匯出的實際尺寸正確）。
+    // 這是唯一能讓超大圖片進得了編輯流程的做法——瀏覽器對這種尺寸的逐像素運算（去背、遮罩）
+    // 本來就撐不住，縮小是必要的，不是可選的加值功能。
+    async _downscaleScan(scan, bitmap) {
+        const scaleFactor = Math.sqrt((MAX_SCAN_PIXELS * 0.95) / (bitmap.width * bitmap.height));
+        const width = Math.max(1, Math.round(bitmap.width * scaleFactor));
+        const height = Math.max(1, Math.round(bitmap.height * scaleFactor));
+        const canvas = new OffscreenCanvas(width, height);
+        canvas.getContext('2d').drawImage(bitmap, 0, 0, width, height);
+        bitmap.close();
+
+        const webpBlob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.92 });
+        scan.bytes = await webpBlob.arrayBuffer();
+        scan.mime = 'image/webp';
+        scan.width = width;
+        scan.height = height;
+        if (scan.dpi) scan.dpi = Math.round(scan.dpi * scaleFactor);
+
+        this.emit('scan-downscaled', { scanId: scan.id, width, height });
+        this.emit('project-changed', {});
+        return createImageBitmap(new Blob([scan.bytes], { type: scan.mime }));
     }
 
     // 超過 MAX_CACHED_BITMAPS 張就釋放最舊的一張，但絕不淘汰目前正顯示中的掃描圖——

@@ -135,8 +135,8 @@ export class ScanView {
         new ResizeObserver(() => this._resizeCanvas()).observe(canvas.parentElement);
 
         store.addEventListener('scan-changed', () => this.loadActiveScan());
-        store.addEventListener('scan-oversized', (e) => {
-            this.announce(`圖片解析度過大（${e.detail.width}×${e.detail.height}），已略過載入以避免瀏覽器當機`);
+        store.addEventListener('scan-downscaled', (e) => {
+            this.announce(`圖片解析度過大，已自動縮小為 ${e.detail.width}×${e.detail.height} 並轉存為 WebP`);
         });
         store.addEventListener('active-piece-changed', () => this.draw());
         store.addEventListener('piece-changed', () => this.draw());

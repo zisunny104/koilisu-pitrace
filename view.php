@@ -757,7 +757,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         transform: translate(-50%, 0);
     }
 
-    /* Tocas 沒有拖放區元件，這裡用最小自訂樣式做拖曳匯入圖片時的視覺回饋。 */
+    /* Tocas 沒有拖放區元件，這裡用最小自訂樣式做拖曳匯入圖片／開啟專案時的視覺回饋。 */
     #main-content.is-drag-target {
         outline: 3px dashed var(--ts-primary-500, #3b82f6);
         outline-offset: -3px;
@@ -885,7 +885,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                             <div class="pane-empty-state" id="scanEmptyState">
                                 <span class="ts-icon is-images-icon is-heading" aria-hidden="true"></span>
                                 <div class="ts-text is-description">還沒有匯入圖片</div>
-                                <div class="ts-text is-description">點擊上方「匯入圖片」，或將圖片檔案拖曳到此區域</div>
+                                <div class="ts-text is-description">點擊上方「匯入圖片」，或將圖片／.pitra 專案檔拖曳到此區域</div>
                             </div>
                             <div class="pane-loading-state" id="scanLoadingState" style="display:none">
                                 <span class="ts-loading is-centered" aria-hidden="true"></span>

@@ -136,6 +136,19 @@ async function importImageFiles(files, statusEl) {
     return imageFiles.length;
 }
 
+async function openProjectFile(file, statusEl) {
+    announce(statusEl, '開啟專案中…');
+    try {
+        const buf = await file.arrayBuffer();
+        const project = parseProjectZip(buf);
+        store.setProject(project);
+        el('projectNameInput').value = project.name;
+        announce(statusEl, `已開啟專案「${project.name}」`);
+    } catch (err) {
+        announce(statusEl, `開啟失敗：${err.message}`);
+    }
+}
+
 function wireDragDropImport(statusEl) {
     const target = document.getElementById('main-content');
     if (!target) return;
@@ -173,7 +186,9 @@ function wireDragDropImport(statusEl) {
         dragDepth = 0;
         target.classList.remove('is-drag-target');
         const files = Array.from(evt.dataTransfer?.files || []);
-        if (files.length) await importImageFiles(files, statusEl);
+        const projectFile = files.find((f) => f.name.toLowerCase().endsWith('.pitra'));
+        if (projectFile) await openProjectFile(projectFile, statusEl);
+        else if (files.length) await importImageFiles(files, statusEl);
     });
 }
 
@@ -486,16 +501,7 @@ function wireProjectToolbar(statusEl) {
         const file = evt.target.files?.[0];
         evt.target.value = '';
         if (!file) return;
-        announce(statusEl, '開啟專案中…');
-        try {
-            const buf = await file.arrayBuffer();
-            const project = parseProjectZip(buf);
-            store.setProject(project);
-            projectNameInput.value = project.name;
-            announce(statusEl, `已開啟專案「${project.name}」`);
-        } catch (err) {
-            announce(statusEl, `開啟失敗：${err.message}`);
-        }
+        await openProjectFile(file, statusEl);
     });
 
     const btnSaveProject = el('btnSaveProject');
