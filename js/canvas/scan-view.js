@@ -68,10 +68,13 @@ export class ScanView {
         this._altHeld = false;
         this._shiftHeld = false;
         this._rafId = null;
+        this._touchPoints = new Map(); // pointerId -> {x,y}，只存 touch 類型，用來偵測雙指縮放
+        this._pinch = null;
 
         canvas.addEventListener('pointerdown', (e) => this._onPointerDown(e));
         canvas.addEventListener('pointermove', (e) => this._onPointerMove(e));
         window.addEventListener('pointerup', (e) => this._onPointerUp(e));
+        window.addEventListener('pointercancel', (e) => this._onPointerCancel(e));
         canvas.addEventListener('pointerleave', () => this._currentTool()?.onPointerLeave?.(this));
         canvas.addEventListener('dblclick', (e) => this._onDblClick(e));
         canvas.addEventListener('keydown', (e) => this._onKeyDown(e));
@@ -275,8 +278,20 @@ export class ScanView {
 
     _onPointerDown(evt) {
         this.canvas.focus();
-        const imgPt = this.cssToImage(evt.clientX, evt.clientY);
         this.canvas.setPointerCapture(evt.pointerId);
+
+        if (evt.pointerType === 'touch') {
+            this._touchPoints.set(evt.pointerId, { x: evt.clientX, y: evt.clientY });
+            if (this._touchPoints.size === 2) {
+                // 第二指按下：目前工具若有未完成的單指手勢（畫套索/框選/擦除中）先取消，改進雙指縮放
+                this._currentTool()?.onCancel?.(this);
+                this._pinch = this._pinchState();
+                return;
+            }
+            if (this._touchPoints.size > 2 || this._pinch) return; // 忽略第三指以上、縮放中忽略新手指
+        }
+
+        const imgPt = this.cssToImage(evt.clientX, evt.clientY);
         // 比照 Figma：滑鼠中鍵不管目前是什麼工具，按住拖曳一律平移（放開瀏覽器預設的
         // 自動捲動手勢，避免跟這裡的平移打架）。
         if (evt.button === 1) {
@@ -288,12 +303,55 @@ export class ScanView {
         this._currentTool()?.onPointerDown?.(imgPt, evt, this);
     }
 
+    // 雙指縮放：記錄手勢開始當下兩指中點對應的影像座標（anchor），縮放過程中讓這個影像座標
+    // 一直跟著目前中點走——這樣兩指同時位移（平移）+ 距離變化（縮放）能一次算完，不用分開處理。
+    _pinchState() {
+        const [a, b] = [...this._touchPoints.values()];
+        const rect = this.canvas.getBoundingClientRect();
+        const midX = (a.x + b.x) / 2 - rect.left;
+        const midY = (a.y + b.y) / 2 - rect.top;
+        return {
+            dist0: Math.hypot(b.x - a.x, b.y - a.y),
+            scale0: this.scale,
+            anchorX: (midX - this.tx) / this.scale,
+            anchorY: (midY - this.ty) / this.scale,
+        };
+    }
+
+    _updatePinch() {
+        const [a, b] = [...this._touchPoints.values()];
+        const dist = Math.hypot(b.x - a.x, b.y - a.y);
+        if (dist < 1 || this._pinch.dist0 < 1) return;
+        const rect = this.canvas.getBoundingClientRect();
+        const midX = (a.x + b.x) / 2 - rect.left;
+        const midY = (a.y + b.y) / 2 - rect.top;
+        const newScale = Math.min(8, Math.max(0.05, this._pinch.scale0 * (dist / this._pinch.dist0)));
+        this.tx = midX - this._pinch.anchorX * newScale;
+        this.ty = midY - this._pinch.anchorY * newScale;
+        this.scale = newScale;
+        this.onZoomChange?.(this.scale);
+        this.requestDraw();
+    }
+
     _onPointerMove(evt) {
+        if (evt.pointerType === 'touch' && this._touchPoints.has(evt.pointerId)) {
+            this._touchPoints.set(evt.pointerId, { x: evt.clientX, y: evt.clientY });
+            if (this._pinch && this._touchPoints.size === 2) {
+                this._updatePinch();
+                return;
+            }
+            if (this._pinch) return; // 縮放手勢放開一指後，剩下那指先不當成新的單指拖曳
+        }
         const imgPt = this.cssToImage(evt.clientX, evt.clientY);
         this._currentTool()?.onPointerMove?.(imgPt, evt, this);
     }
 
     _onPointerUp(evt) {
+        if (evt.pointerType === 'touch') {
+            this._touchPoints.delete(evt.pointerId);
+            if (this._pinch && this._touchPoints.size < 2) this._pinch = null;
+            if (this._touchPoints.size > 0) return;
+        }
         const imgPt = this.cssToImage(evt.clientX, evt.clientY);
         this._currentTool()?.onPointerUp?.(imgPt, evt, this);
         if (evt.button === 1 && this._middlePanActive) {
@@ -304,6 +362,21 @@ export class ScanView {
         if (this._spacePendingRelease) {
             this._spaceHeld = false;
             this._spacePendingRelease = false;
+            this.canvas.classList.remove('is-pan-armed');
+            this._updateCursorClass();
+        }
+    }
+
+    // 觸控被系統手勢（如邊緣返回、意外捲動）打斷時瀏覽器會發 pointercancel 而不是 pointerup，
+    // 沒有這個 fallback 的話工具會卡在「拖曳中」狀態出不來（例如套索半條路徑畫一半卡住）。
+    _onPointerCancel(evt) {
+        if (evt.pointerType === 'touch') {
+            this._touchPoints.delete(evt.pointerId);
+            if (this._touchPoints.size < 2) this._pinch = null;
+        }
+        this._currentTool()?.onCancel?.(this);
+        if (this._middlePanActive) {
+            this._middlePanActive = false;
             this.canvas.classList.remove('is-pan-armed');
             this._updateCursorClass();
         }

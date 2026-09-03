@@ -349,6 +349,11 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         outline-offset: -2px;
     }
 
+    /* 沒有這個，觸控拖曳會被瀏覽器當成頁面捲動／雙指縮放頁面，跟畫布自己的平移/縮放/選取搶手勢 */
+    #scanCanvas {
+        touch-action: none;
+    }
+
     .pane-canvas-wrap canvas:focus-visible {
         outline: 3px solid var(--ts-primary-500, #3b82f6);
     }
