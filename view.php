@@ -496,9 +496,17 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         background: var(--ts-gray-300, #ddd);
     }
 
+    /* 選取工具／其他工具兩叢各自獨立，讓彈出鈕跟著正在使用的那叢工具走，不會固定黏在
+       整排工具的最後面。叢間距比叢內距寬，視覺上分得出是兩組。 */
+    .pane-tool-cluster {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+    }
+
     /* 工具 radiogroup 跟它的模式彈出鈕（選取模式／橡皮擦筆刷大小）視覺上是同一組，
        窄 gap 包成一叢、不用分隔線隔開，比照 Figma 工具列「圖示鈕＋緊貼小箭頭」的作法。 */
-    .pane-tool-cluster {
+    .pane-tool-subcluster {
         display: flex;
         align-items: center;
         gap: 0.3rem;
@@ -947,61 +955,68 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                 </button>
                                 <div class="pane-toolbar-divider" aria-hidden="true"></div>
                                 <div class="pane-tool-cluster">
-                                    <div class="ts-selection is-compact" role="radiogroup" aria-label="選取工具">
-                                        <label class="item" data-tooltip="矩形選取（M）">
-                                            <input type="radio" name="tool" value="rect" id="tool-rect" checked aria-label="矩形選取">
-                                            <div class="text"><span class="ts-icon is-crop-simple-icon" aria-hidden="true"></span>
-                                                <span class="has-hidden">矩形</span></div>
-                                        </label>
-                                        <label class="item" data-tooltip="套索選取（L）">
-                                            <input type="radio" name="tool" value="lasso" id="tool-lasso" aria-label="套索選取">
-                                            <div class="text"><span class="ts-icon is-draw-polygon-icon" aria-hidden="true"></span>
-                                                <span class="has-hidden">套索</span></div>
-                                        </label>
-                                        <label class="item" data-tooltip="平移（H）">
-                                            <input type="radio" name="tool" value="pan" id="tool-pan" aria-label="平移">
-                                            <div class="text"><span class="ts-icon is-hand-icon" aria-hidden="true"></span> <span
-                                                    class="has-hidden">平移</span></div>
-                                        </label>
-                                        <label class="item" data-tooltip="取樣背景色（I）">
-                                            <input type="radio" name="tool" value="eyedropper" id="tool-eyedropper" aria-label="取樣背景色">
-                                            <div class="text"><span class="ts-icon is-eye-dropper-icon" aria-hidden="true"></span>
-                                                <span class="has-hidden">取樣背景色</span></div>
-                                        </label>
-                                        <label class="item" data-tooltip="橡皮擦（E）">
-                                            <input type="radio" name="tool" value="eraser" id="tool-eraser" aria-label="橡皮擦">
-                                            <div class="text"><span class="ts-icon is-eraser-icon" aria-hidden="true"></span>
-                                                <span class="has-hidden">橡皮擦</span></div>
-                                        </label>
-                                    </div>
+                                    <div class="pane-tool-subcluster">
+                                        <div class="ts-selection is-compact" role="radiogroup" aria-label="選取工具">
+                                            <label class="item" data-tooltip="矩形選取（M）">
+                                                <input type="radio" name="tool" value="rect" id="tool-rect" checked aria-label="矩形選取">
+                                                <div class="text"><span class="ts-icon is-crop-simple-icon" aria-hidden="true"></span>
+                                                    <span class="has-hidden">矩形</span></div>
+                                            </label>
+                                            <label class="item" data-tooltip="套索選取（L）">
+                                                <input type="radio" name="tool" value="lasso" id="tool-lasso" aria-label="套索選取">
+                                                <div class="text"><span class="ts-icon is-draw-polygon-icon" aria-hidden="true"></span>
+                                                    <span class="has-hidden">套索</span></div>
+                                            </label>
+                                        </div>
 
-                                    <div class="pane-menu-wrap" id="selectionModeMenuWrap">
-                                        <button id="btnSelectionModeMenu" class="ts-button is-icon is-ghost pane-tool-chevron"
-                                            aria-label="選取模式：加選" aria-haspopup="menu" aria-expanded="false"
-                                            data-tooltip="選取模式（目前：加選）">
-                                            <span class="ts-icon is-chevron-down-icon" aria-hidden="true"></span>
-                                        </button>
-                                        <div class="ts-menu is-dense is-small is-separated pane-dropdown-menu" id="selectionModeMenu" role="menu"
-                                            aria-label="選取模式" hidden>
-                                            <button type="button" class="item is-selected" role="menuitemradio" aria-checked="true" data-mode="add">加選（＋）</button>
-                                            <button type="button" class="item" role="menuitemradio" aria-checked="false" data-mode="subtract">減選（－）</button>
-                                            <button type="button" class="item" role="menuitemradio" aria-checked="false" data-mode="new">取代全部</button>
+                                        <div class="pane-menu-wrap" id="selectionModeMenuWrap">
+                                            <button id="btnSelectionModeMenu" class="ts-button is-icon is-ghost pane-tool-chevron"
+                                                aria-label="選取模式：加選" aria-haspopup="menu" aria-expanded="false"
+                                                data-tooltip="選取模式（目前：加選）">
+                                                <span class="ts-icon is-chevron-down-icon" aria-hidden="true"></span>
+                                            </button>
+                                            <div class="ts-menu is-dense is-small is-separated pane-dropdown-menu" id="selectionModeMenu" role="menu"
+                                                aria-label="選取模式" hidden>
+                                                <button type="button" class="item is-selected" role="menuitemradio" aria-checked="true" data-mode="add">加選（＋）</button>
+                                                <button type="button" class="item" role="menuitemradio" aria-checked="false" data-mode="subtract">減選（－）</button>
+                                                <button type="button" class="item" role="menuitemradio" aria-checked="false" data-mode="new">取代全部</button>
+                                            </div>
                                         </div>
                                     </div>
 
-                                    <div class="pane-menu-wrap" id="eraserSizeMenuWrap" hidden>
-                                        <button id="btnEraserSizeMenu" class="ts-button is-icon is-ghost pane-tool-chevron"
-                                            aria-label="橡皮擦筆刷大小" aria-haspopup="menu" aria-expanded="false"
-                                            data-tooltip="橡皮擦筆刷大小">
-                                            <span class="ts-icon is-chevron-down-icon" aria-hidden="true"></span>
-                                        </button>
-                                        <div class="ts-menu is-small pane-dropdown-menu" id="eraserSizeMenu" hidden>
-                                            <label class="ts-text is-label" for="eraserRadius">筆刷大小</label>
-                                            <div class="range-row">
-                                                <div class="ts-range"><input type="range" id="eraserRadius" min="5" max="300" value="40"></div>
-                                                <div class="ts-input"><input type="number" id="eraserRadiusValue" min="5" max="300" value="40" aria-label="橡皮擦筆刷大小數值"></div>
+                                    <div class="pane-tool-subcluster">
+                                        <div class="ts-selection is-compact" role="radiogroup" aria-label="其他工具">
+                                            <label class="item" data-tooltip="平移（H）">
+                                                <input type="radio" name="tool" value="pan" id="tool-pan" aria-label="平移">
+                                                <div class="text"><span class="ts-icon is-hand-icon" aria-hidden="true"></span> <span
+                                                        class="has-hidden">平移</span></div>
+                                            </label>
+                                            <label class="item" data-tooltip="取樣背景色（I）">
+                                                <input type="radio" name="tool" value="eyedropper" id="tool-eyedropper" aria-label="取樣背景色">
+                                                <div class="text"><span class="ts-icon is-eye-dropper-icon" aria-hidden="true"></span>
+                                                    <span class="has-hidden">取樣背景色</span></div>
+                                            </label>
+                                            <label class="item" data-tooltip="橡皮擦（E）">
+                                                <input type="radio" name="tool" value="eraser" id="tool-eraser" aria-label="橡皮擦">
+                                                <div class="text"><span class="ts-icon is-eraser-icon" aria-hidden="true"></span>
+                                                    <span class="has-hidden">橡皮擦</span></div>
+                                            </label>
+                                        </div>
+
+                                        <div class="pane-menu-wrap" id="eraserSizeMenuWrap" hidden>
+                                            <button id="btnEraserSizeMenu" class="ts-button is-icon is-ghost pane-tool-chevron"
+                                                aria-label="橡皮擦筆刷大小" aria-haspopup="menu" aria-expanded="false"
+                                                data-tooltip="橡皮擦筆刷大小">
+                                                <span class="ts-icon is-chevron-down-icon" aria-hidden="true"></span>
+                                            </button>
+                                            <div class="ts-menu is-small pane-dropdown-menu" id="eraserSizeMenu" hidden>
+                                                <label class="ts-text is-label" for="eraserRadius">筆刷大小</label>
+                                                <div class="range-row">
+                                                    <div class="ts-range"><input type="range" id="eraserRadius" min="5" max="300" value="40"></div>
+                                                    <div class="ts-input"><input type="number" id="eraserRadiusValue" min="5" max="300" value="40" aria-label="橡皮擦筆刷大小數值"></div>
+                                                </div>
+                                                <div class="has-top-spaced-small ts-text is-description">快捷鍵 [ / ]（Shift 加大步進）也可以調整；按住 Alt 拖曳＝還原（負向筆刷）。</div>
                                             </div>
-                                            <div class="has-top-spaced-small ts-text is-description">快捷鍵 [ / ]（Shift 加大步進）也可以調整；按住 Alt 拖曳＝還原（負向筆刷）。</div>
                                         </div>
                                     </div>
                                 </div>
