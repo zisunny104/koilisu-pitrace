@@ -20,10 +20,16 @@ export class ThumbnailStrip {
 
     // 只切換 aria-current，不重建 DOM：避免點擊當下整批重建（innerHTML = ''）
     // 造成縮圖閃爍、並讓剛點擊的按鈕失去焦點。
+    // 新增物件／刪除後遞補／undo-redo 都會改變 activePieceId 並觸發這裡，順便把該縮圖捲入可視
+    // 範圍——用 offsetParent 檢查清單是否可見（例如單獨全螢幕模式會把整個側欄 display:none），
+    // 不可見時捲動沒有意義，也不該打斷使用者當下的版面。
     syncActive() {
         const buttons = this.listEl.querySelectorAll('.piece-thumb');
+        const isVisible = this.listEl.offsetParent !== null;
         for (const btn of buttons) {
-            btn.setAttribute('aria-current', btn.dataset.pieceId === store.activePieceId ? 'true' : 'false');
+            const isActive = btn.dataset.pieceId === store.activePieceId;
+            btn.setAttribute('aria-current', isActive ? 'true' : 'false');
+            if (isActive && isVisible) btn.scrollIntoView({ block: 'nearest', inline: 'nearest' });
         }
     }
 

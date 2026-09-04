@@ -11,6 +11,20 @@ function stripExtension(filename) {
     return filename.replace(/\.[^.]+$/, '');
 }
 
+function deepEqual(a, b) {
+    if (a === b) return true;
+    if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+    if (Array.isArray(a) !== Array.isArray(b)) return false;
+    const keysA = Object.keys(a);
+    const keysB = Object.keys(b);
+    if (keysA.length !== keysB.length) return false;
+    for (const key of keysA) {
+        if (!Object.prototype.hasOwnProperty.call(b, key)) return false;
+        if (!deepEqual(a[key], b[key])) return false;
+    }
+    return true;
+}
+
 export function createEmptyProject(name = '未命名專案') {
     return {
         schema: 1,
@@ -96,6 +110,24 @@ class Store extends EventTarget {
         return structuredClone(this.project.pieces);
     }
 
+    // undo/redo 還原快照時，把內容沒變的物件／欄位換回目前存活物件的參照，而不是直接吃
+    // structuredClone 出來的全新物件——preview-pane.js 的 geometryCache 是用 `===` 比對
+    // selection/eraseStrokes/rotation 判斷要不要重算，換成全新參照會讓每個物件都被判定
+    //「已變更」，逐一步 undo/redo 都要整批重新運算縮圖，卡頓的根源就在這裡。
+    _reconcilePieces(snapshotPieces) {
+        const liveById = new Map(this.project.pieces.map((p) => [p.id, p]));
+        return snapshotPieces.map((snap) => {
+            const live = liveById.get(snap.id);
+            if (!live) return snap;
+            if (deepEqual(live, snap)) return live;
+            const reconciled = { ...snap };
+            for (const key of Object.keys(snap)) {
+                if (key !== 'id' && deepEqual(live[key], snap[key])) reconciled[key] = live[key];
+            }
+            return reconciled;
+        });
+    }
+
     // 立即記一步（新增／刪除作品這類離散動作）：先把任何合併中的連續編輯結清，維持步驟順序。
     _pushHistoryStep() {
         this._flushPendingHistory();
@@ -141,7 +173,7 @@ class Store extends EventTarget {
         if (this._undoStack.length === 0) return false;
         const prev = this._undoStack.pop();
         this._redoStack.push(this._snapshotPieces());
-        this.project.pieces = prev;
+        this.project.pieces = this._reconcilePieces(prev);
         if (!this.project.pieces.find((p) => p.id === this.activePieceId)) {
             this.activePieceId = this.project.pieces[0]?.id ?? null;
         }
@@ -155,7 +187,7 @@ class Store extends EventTarget {
         if (this._redoStack.length === 0) return false;
         const next = this._redoStack.pop();
         this._undoStack.push(this._snapshotPieces());
-        this.project.pieces = next;
+        this.project.pieces = this._reconcilePieces(next);
         if (!this.project.pieces.find((p) => p.id === this.activePieceId)) {
             this.activePieceId = this.project.pieces[0]?.id ?? null;
         }
@@ -339,7 +371,10 @@ class Store extends EventTarget {
         this._pushHistoryStep();
         this.project.pieces.splice(idx, 1);
         if (this.activePieceId === pieceId) {
-            this.activePieceId = this.project.pieces[0]?.id ?? null;
+            // 選取原本在清單中同一位置遞補上來的鄰居（刪的是最後一個則退回新的最後一個），
+            // 讓連續刪除多個物件時焦點留在原地，不會每刪一個就跳到清單開頭。
+            const fallbackIdx = Math.min(idx, this.project.pieces.length - 1);
+            this.activePieceId = this.project.pieces[fallbackIdx]?.id ?? null;
             this.emit('active-piece-changed', {});
         }
         this.emit('project-changed', {});
