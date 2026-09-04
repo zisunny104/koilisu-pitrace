@@ -70,9 +70,18 @@ function cropToOpaqueBounds(canvas) {
 // 只有裁切/選取/擦除/旋轉/來源點陣圖真的變了才重建，避免每次微調滑桿都重跑一次裁切＋
 // getImageData 讀回（整條管線裡最貴的部分）。
 const geometryCache = new Map();
-// 開新專案／開啟專案／新增或刪除掃描與作品等結構性變動時整批清掉，避免快取隨 session 長度
-// 無限累積；一般編輯（拖曳滑桿、調整選取）只會觸發 piece-changed，不會清到這裡。
-store.addEventListener('project-changed', () => geometryCache.clear());
+// project-changed 涵蓋新增/刪除物件這類跟「其他物件的幾何」完全無關的變動——新增物件時
+// 整批清掉快取，等於連帶把清單裡其他每個物件的縮圖快取也剃掉，物件一多，點一次「新增物件」
+// 縮圖列表就要整批重算，才會感覺卡頓。改成只清掉已經不存在於專案裡的物件（開新專案／
+// 刪除物件／刪除掃描後留下的孤兒快取），其餘物件的快取原封不動；每個物件自己的快取是否
+// 還有效，renderGeometry() 內建的逐欄位比對已經會處理（selection/eraseStrokes/rotation
+// 這些欄位真的變了，比對就會 miss，不需要外部再清一次）。
+store.addEventListener('project-changed', () => {
+    const validIds = new Set(store.project.pieces.map((p) => p.id));
+    for (const id of geometryCache.keys()) {
+        if (!validIds.has(id)) geometryCache.delete(id);
+    }
+});
 
 /**
  * 幾何處理管線（裁切／套索遮罩 → 橡皮擦擦除 → 旋轉 → 降採樣），跟顏色無關，
