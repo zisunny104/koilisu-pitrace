@@ -19,12 +19,15 @@ export function selectionBounds(piece) {
     if (piece.selection.type === 'lasso' && piece.selection.loops?.length) {
         const points = piece.selection.loops.flatMap((l) => l.path);
         if (points.length > 0) {
-            const xs = points.map((p) => p.x);
-            const ys = points.map((p) => p.y);
-            const minX = Math.min(...xs);
-            const maxX = Math.max(...xs);
-            const minY = Math.min(...ys);
-            const maxY = Math.max(...ys);
+            // 不用 Math.min(...xs)／Math.max(...xs)：節點數極端多時展開參數可能超過引擎
+            // 呼叫堆疊上限而拋 RangeError，改用手動迴圈取極值。
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const p of points) {
+                if (p.x < minX) minX = p.x;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.y > maxY) maxY = p.y;
+            }
             return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
         }
     }

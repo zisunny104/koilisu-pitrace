@@ -156,6 +156,7 @@ export class ScanView {
             this._updateCursorClass();
             this.draw();
         });
+        store.addEventListener('selection-mode-changed', () => this._updateCursorClass());
 
         this._updateCursorClass();
         this._resizeCanvas();
@@ -167,13 +168,15 @@ export class ScanView {
         switch (this._activeToolName) {
             case 'rect':
             case 'lasso': {
-                // 跟 LassoTool/RectSelectTool.onPointerDown 的 draftMode 判斷同一套規則：完全沒有
-                // 既有選取時修飾鍵無意義，一律是新建十字；有既有選取時預設＝加選，Alt＝減選，
-                // Shift＝取代整個選取（跟無選取時共用同一個新建十字，沒有另外的「取代」圖示）。
+                // 跟 LassoTool/RectSelectTool.onPointerDown 的 draftMode 判斷同一套規則（Adobe 慣例）：
+                // 完全沒有既有選取時修飾鍵無意義，一律是新建十字；有既有選取時 Shift＝強制加選、
+                // Alt＝強制減選（暫時覆蓋），無修飾鍵時反映持久的 store.selectionMode——
+                // 'new' 沿用跟無選取時同一個新建十字，沒有另外的「取代」圖示。
                 const piece = store.getActivePiece();
                 const hasSelection = !!piece && loopsFromSelection(piece.selection).length > 0;
-                if (!hasSelection || this._shiftHeld) this.canvas.classList.add('cursor-crosshair');
-                else if (this._altHeld) this.canvas.classList.add('cursor-select-subtract');
+                const mode = !hasSelection ? 'new' : this._altHeld ? 'subtract' : this._shiftHeld ? 'add' : store.selectionMode;
+                if (mode === 'new') this.canvas.classList.add('cursor-crosshair');
+                else if (mode === 'subtract') this.canvas.classList.add('cursor-select-subtract');
                 else this.canvas.classList.add('cursor-select-add');
                 break;
             }
@@ -659,6 +662,13 @@ export class ScanView {
                 if (outline) {
                     ctx.save();
                     ctx.translate(outline.offsetX, outline.offsetY);
+                    if (outline.scale !== 1) {
+                        // mergedLoopOutline 為了效能可能降解析度描邊（見 selection-geometry.js），
+                        // pathD 座標落在縮小後的空間，畫的時候要放大回去；線寬同步反向補償，
+                        // 不然縮小倍率會讓外框看起來變粗細不一。
+                        ctx.scale(1 / outline.scale, 1 / outline.scale);
+                        ctx.lineWidth *= outline.scale;
+                    }
                     ctx.stroke(new Path2D(outline.pathD));
                     ctx.restore();
                 }

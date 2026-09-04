@@ -48,6 +48,8 @@ export function createPiece(scanId, overrides = {}) {
             enabled: true,
             sampleColor: { r: 255, g: 255, b: 255 },
             strength: 50,
+            despeckle: 0,
+            strokeEnhance: 0,
         },
         svgExport: {
             enabled: false,
@@ -86,6 +88,7 @@ class Store extends EventTarget {
         this.activeScanId = null;
         this.activePieceId = null;
         this.activeTool = 'rect';
+        this.selectionMode = 'add'; // 'add' | 'subtract' | 'new'：矩形/套索工具無修飾鍵時採用的預設模式
         this._bitmapCache = new Map(); // scanId -> ImageBitmap（運算快取，不參與序列化）
         this._undoStack = [];
         this._redoStack = [];
@@ -409,6 +412,11 @@ class Store extends EventTarget {
     setActiveTool(tool) {
         this.activeTool = tool;
         this.emit('tool-changed', { tool });
+    }
+
+    setSelectionMode(mode) {
+        this.selectionMode = mode;
+        this.emit('selection-mode-changed', { mode });
     }
 }
 

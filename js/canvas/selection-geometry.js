@@ -33,9 +33,32 @@ export function loopsFromSelection(selection) {
 // 拖曳畫布觸發的多次 draw() 才不會每畫一次就重新點陣化＋描邊一次。
 const outlineCache = new WeakMap();
 
+// 節點座標取極值：故意不用 Math.min(...xs)／Math.max(...xs) 展開陣列——套索點數極端多時
+// （大量加/減選疊出來的節點）展開參數可能超過引擎呼叫堆疊上限，直接拋 RangeError 而不只是變慢。
+function boundsOf(points) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of points) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+    }
+    minX = Math.floor(minX) - 1;
+    minY = Math.floor(minY) - 1;
+    maxX = Math.ceil(maxX) + 1;
+    maxY = Math.ceil(maxY) + 1;
+    return { minX, minY, w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY) };
+}
+
+// 外框純粹是畫面上的描邊視覺效果，從不寫回 piece.selection，可以放心犧牲解析度換效能：
+// 超過這個邊長就先縮小點陣化＋描邊，畫的時候再等比例放大回去（見 scan-view.js 的 outline.scale）。
+// 選取範圍最大可達原始掃描的 6 千萬像素等級，不降的話每次加/減選都要在主執行緒對整個
+// bounding box 重新點陣化＋marching squares，是「選取節點很多時操作變頓」的主因。
+const OUTLINE_MAX_DIM = 1600;
+
 /**
  * @param {Array<{path:{x:number,y:number}[], closed:boolean, mode:'add'|'subtract'}>} loops
- * @returns {{ pathD: string, nodeCount: number, offsetX: number, offsetY: number } | null}
+ * @returns {{ pathD: string, nodeCount: number, offsetX: number, offsetY: number, scale: number } | null}
  */
 export function mergedLoopOutline(loops) {
     if (!loops || loops.length === 0) return null;
@@ -43,21 +66,18 @@ export function mergedLoopOutline(loops) {
 
     const points = loops.flatMap((l) => l.path);
     if (!points.length) return null;
-    const xs = points.map((p) => p.x);
-    const ys = points.map((p) => p.y);
-    const minX = Math.floor(Math.min(...xs)) - 1;
-    const minY = Math.floor(Math.min(...ys)) - 1;
-    const maxX = Math.ceil(Math.max(...xs)) + 1;
-    const maxY = Math.ceil(Math.max(...ys)) + 1;
-    const w = Math.max(1, maxX - minX);
-    const h = Math.max(1, maxY - minY);
+    const { minX, minY, w, h } = boundsOf(points);
 
-    const mask = buildSelectionMask(loops, w, h, minX, minY);
-    const imageData = mask.getContext('2d').getImageData(0, 0, w, h);
+    const scale = Math.min(1, OUTLINE_MAX_DIM / Math.max(w, h));
+    const mw = Math.max(1, Math.round(w * scale));
+    const mh = Math.max(1, Math.round(h * scale));
+
+    const mask = buildSelectionMask(loops, mw, mh, minX, minY, scale);
+    const imageData = mask.getContext('2d').getImageData(0, 0, mw, mh);
     const { pathD, nodeCount } = traceAlphaContours(imageData, { threshold: 128, simplifyTolerance: 0.75 });
     if (!pathD) return null;
 
-    const result = { pathD, nodeCount, offsetX: minX, offsetY: minY };
+    const result = { pathD, nodeCount, offsetX: minX, offsetY: minY, scale };
     outlineCache.set(loops, result);
     return result;
 }
@@ -73,6 +93,12 @@ function pointInRing(pt, ring) {
     }
     return inside;
 }
+
+// 平面化結果會直接取代 piece.selection.loops，之後去背/裁切/匯出都是拿新資料在完整原始
+// 解析度下運算，所以門檻抓得比純視覺用的 OUTLINE_MAX_DIM 高很多——只有選取範圍逼近
+// MAX_SCAN_PIXELS 等級（6 千萬像素、約 7746×7746）才會觸發，一般情況下 loops 座標
+// 保持原始精度完全不降。
+const FLATTEN_MAX_DIM = 4000;
 
 /**
  * 平面化選取：把目前（可能是多次加/減選疊出來）的 loops 合併成「最少數量、視覺結果
@@ -90,28 +116,44 @@ export function flattenLoops(loops) {
     if (!loops || loops.length === 0) return [];
     const points = loops.flatMap((l) => l.path);
     if (!points.length) return [];
-    const xs = points.map((p) => p.x);
-    const ys = points.map((p) => p.y);
-    const minX = Math.floor(Math.min(...xs)) - 1;
-    const minY = Math.floor(Math.min(...ys)) - 1;
-    const maxX = Math.ceil(Math.max(...xs)) + 1;
-    const maxY = Math.ceil(Math.max(...ys)) + 1;
-    const w = Math.max(1, maxX - minX);
-    const h = Math.max(1, maxY - minY);
+    const { minX, minY, w, h } = boundsOf(points);
 
-    const mask = buildSelectionMask(loops, w, h, minX, minY);
-    const imageData = mask.getContext('2d').getImageData(0, 0, w, h);
+    const scale = Math.min(1, FLATTEN_MAX_DIM / Math.max(w, h));
+    const mw = Math.max(1, Math.round(w * scale));
+    const mh = Math.max(1, Math.round(h * scale));
+
+    const mask = buildSelectionMask(loops, mw, mh, minX, minY, scale);
+    const imageData = mask.getContext('2d').getImageData(0, 0, mw, mh);
     const rings = traceAlphaContourRings(imageData, { threshold: 128, simplifyTolerance: 0.75 });
     if (!rings.length) return [];
 
+    // 巢狀深度比對前先用 bbox 互斥快速排除：兩個輪廓的 bbox 完全不重疊就必然不互相包含，
+    // 不用真的跑 pointInRing 的逐點射線法。使用者疊出很多個彼此不相交的加/減選區塊時
+    // （很常見），這一步能省掉原本 O(輪廓數² × 節點數) 裡絕大部分的無謂比對。
+    const ringBounds = rings.map((ring) => {
+        let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+        for (const [x, y] of ring) {
+            if (x < bx0) bx0 = x;
+            if (x > bx1) bx1 = x;
+            if (y < by0) by0 = y;
+            if (y > by1) by1 = y;
+        }
+        return { bx0, by0, bx1, by1 };
+    });
+    const insideBounds = (b, x, y) => x >= b.bx0 && x <= b.bx1 && y >= b.by0 && y <= b.by1;
+
+    const invScale = 1 / scale;
     return rings
         .map((ring, idx) => ({
             ring,
-            depth: rings.reduce((count, other, j) => (j === idx ? count : count + (pointInRing(ring[0], other) ? 1 : 0)), 0),
+            depth: rings.reduce((count, other, j) => {
+                if (j === idx || !insideBounds(ringBounds[j], ring[0][0], ring[0][1])) return count;
+                return count + (pointInRing(ring[0], other) ? 1 : 0);
+            }, 0),
         }))
         .sort((a, b) => a.depth - b.depth)
         .map(({ ring, depth }) => ({
-            path: ring.map(([x, y]) => ({ x: x + minX, y: y + minY })),
+            path: ring.map(([x, y]) => ({ x: x * invScale + minX, y: y * invScale + minY })),
             closed: true,
             mode: depth % 2 === 0 ? 'add' : 'subtract',
         }));

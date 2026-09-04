@@ -12,7 +12,8 @@ import { renderPdfPages } from '../processing/pdf-import.js';
 import { announce } from '../a11y.js';
 import { clearSnapshot } from '../autosave.js';
 import { setPreviewMode } from './preview-mode.js';
-import { loopsFromSelection, flattenLoops } from '../canvas/selection-geometry.js';
+import { loopsFromSelection } from '../canvas/selection-geometry.js';
+import { flattenLoopsAsync } from '../workers/selection-worker-client.js';
 
 function el(id) {
     return document.getElementById(id);
@@ -26,9 +27,34 @@ function makeIcon(cls) {
 }
 
 // 共用下拉選單開關邏輯（觸發鈕 + 選單容器）：點外面關閉、Esc 關閉並把焦點還給觸發鈕。
-// 「匯出全部」「圖片清單」兩個下拉選單共用同一套互動；觸發鈕本身的 click 行為由呼叫端自訂
-// （圖片清單那顆鈕在還沒有圖片時，click 要直接開檔案選取器，不能無條件切換選單開關）。
-function wireDropdownToggle(trigger, menu, onToggle) {
+// 觸發鈕本身的 click 行為由呼叫端自訂（例如圖片清單鈕在還沒有圖片時要直接開檔案選取器）。
+//
+// opts.portal＝true 時，開啟時把選單節點搬到 document.body、改用 position:fixed 由 JS 算座標，
+// 避開畫布浮動工具列 overflow-x:auto 連帶把 overflow-y 也裁成 auto、蓋掉往下彈出內容的問題。
+function wireDropdownToggle(trigger, menu, onToggle, opts = {}) {
+    const portal = opts.portal;
+
+    // collision flip：下面空間不夠、上面夠的話翻到觸發鈕上方展開。觸發鈕若身處
+    // .canvas-floating-toolbar，翻轉/間距以整顆浮動藥丸的外緣為準（而非觸發鈕自身邊界），
+    // 選單才不會貼到甚至蓋住浮動工具列本體。
+    function position() {
+        const rect = trigger.getBoundingClientRect();
+        const shell = trigger.closest('.canvas-floating-toolbar');
+        const shellRect = shell ? shell.getBoundingClientRect() : rect;
+        const gap = 10;
+        menu.style.position = 'fixed';
+        menu.style.visibility = 'hidden';
+        menu.style.top = '0px';
+        const menuHeight = menu.offsetHeight;
+        const menuWidth = menu.offsetWidth;
+        const fitsBelow = shellRect.bottom + gap + menuHeight <= window.innerHeight - 8;
+        const top = fitsBelow ? shellRect.bottom + gap : Math.max(8, shellRect.top - gap - menuHeight);
+        const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
+        menu.style.top = `${top}px`;
+        menu.style.left = `${left}px`;
+        menu.style.visibility = '';
+    }
+
     function close() {
         menu.hidden = true;
         trigger.setAttribute('aria-expanded', 'false');
@@ -37,6 +63,10 @@ function wireDropdownToggle(trigger, menu, onToggle) {
     function open() {
         menu.hidden = false;
         trigger.setAttribute('aria-expanded', 'true');
+        if (portal) {
+            document.body.appendChild(menu);
+            position();
+        }
         onToggle?.(true);
     }
     function toggle() {
@@ -607,6 +637,10 @@ function wireCanvasFloatingToolbar(scanView, statusEl) {
         });
     });
 
+    wireSelectionModeMenu();
+    wireEraserSizeMenu();
+    wireToolOptionVisibility();
+
     const zoomControl = wireZoomControl(scanView);
     el('btnZoomOut').addEventListener('click', () => scanView.zoomBy(1 / 1.2));
     el('btnZoomIn').addEventListener('click', () => scanView.zoomBy(1.2));
@@ -621,6 +655,98 @@ function wireCanvasFloatingToolbar(scanView, statusEl) {
     };
     store.addEventListener('scan-changed', syncCanvasControls);
     syncCanvasControls();
+}
+
+// 選取模式彈出選單：比照「匯出全部」用 wireDropdownToggle，radiogroup 選定即關閉選單。
+// 觸發鈕圖示固定是 chevron-down；目前選到哪個模式靠選單裡每個選項自己的底色階層表示
+// （見 view.php 的 .is-select-list 樣式），aria-label/tooltip 即時反映目前模式。
+const selectionModeLabels = { add: '加選', subtract: '減選', new: '取代全部' };
+
+function wireSelectionModeMenu() {
+    const trigger = el('btnSelectionModeMenu');
+    const menu = el('selectionModeMenu');
+    if (!trigger || !menu) return;
+    const radios = menu.querySelectorAll('input[name="selMode"]');
+
+    function syncTrigger() {
+        const mode = store.selectionMode;
+        const label = `選取模式（目前：${selectionModeLabels[mode] || '加選'}）`;
+        trigger.setAttribute('aria-label', label);
+        trigger.setAttribute('data-tooltip', label);
+        radios.forEach((radio) => { radio.checked = radio.value === mode; });
+    }
+
+    const { close, toggle } = wireDropdownToggle(trigger, menu, null, { portal: true });
+    trigger.addEventListener('click', toggle);
+
+    radios.forEach((radio) => {
+        radio.addEventListener('change', () => {
+            if (!radio.checked) return;
+            store.setSelectionMode(radio.value);
+            close();
+            trigger.focus();
+        });
+    });
+
+    store.addEventListener('selection-mode-changed', syncTrigger);
+    syncTrigger();
+}
+
+// 橡皮擦筆刷大小彈出選單：跟 [ / ] 快捷鍵改的是同一個 piece.eraseRadius 欄位，兩種調整方式
+// 天生同步——每次選單開啟或 piece 變動都重新從 store 讀值寫回 range/number，不需要另外broadcast。
+function wireEraserSizeMenu() {
+    const trigger = el('btnEraserSizeMenu');
+    const menu = el('eraserSizeMenu');
+    if (!trigger || !menu) return;
+
+    function syncFromPiece() {
+        const piece = store.getActivePiece();
+        const radius = piece?.eraseRadius ?? 40;
+        el('eraserRadius').value = radius;
+        el('eraserRadiusValue').value = radius;
+    }
+
+    const { toggle } = wireDropdownToggle(trigger, menu, (isOpen) => {
+        if (isOpen) syncFromPiece();
+    }, { portal: true });
+    trigger.addEventListener('click', toggle);
+
+    bindRangeNumberPair('eraserRadius', 'eraserRadiusValue', (n) => {
+        const piece = store.getActivePiece();
+        if (piece) store.updatePiece(piece.id, { eraseRadius: n });
+    });
+
+    store.addEventListener('active-piece-changed', syncFromPiece);
+    store.addEventListener('piece-changed', syncFromPiece);
+    syncFromPiece();
+}
+
+// 選取模式／橡皮擦筆刷大小這兩個彈出選單各自只跟一種工具有關，比照 Adobe 選項列「切到哪個
+// 工具才顯示哪個工具的設定」慣例，只在對應工具啟用時才顯示觸發鈕：兩個一直露出來的話，
+// #scanPaneBox 桌面版寬度通常只有五百多 px，工具列會被擠出水平捲軸、看起來很亂。
+function wireToolOptionVisibility() {
+    const selWrap = el('selectionModeMenuWrap');
+    const eraWrap = el('eraserSizeMenuWrap');
+    const selTrigger = el('btnSelectionModeMenu');
+    const selMenu = el('selectionModeMenu');
+    const eraTrigger = el('btnEraserSizeMenu');
+    const eraMenu = el('eraserSizeMenu');
+    if (!selWrap || !eraWrap) return;
+
+    function sync() {
+        const tool = store.activeTool;
+        const showSel = tool === 'rect' || tool === 'lasso';
+        const showEra = tool === 'eraser';
+        selWrap.hidden = !showSel;
+        eraWrap.hidden = !showEra;
+        // 觸發鈕連同外層一起被藏起來時，選單本身（可能已被 portal 搬到 body 底下）也要
+        // 強制關閉，不然切換工具後選單會孤兒式地繼續浮在畫面上。
+        if (!showSel && !selMenu.hidden) { selMenu.hidden = true; selTrigger.setAttribute('aria-expanded', 'false'); }
+        if (!showEra && !eraMenu.hidden) { eraMenu.hidden = true; eraTrigger.setAttribute('aria-expanded', 'false'); }
+    }
+
+    store.addEventListener('tool-changed', sync);
+    sync();
 }
 
 // 左側工作區「單獨全螢幕」模式：靠 CSS 讓 #scanPaneBox 本身 position:fixed;inset:0 撐滿畫面，
@@ -796,7 +922,10 @@ function wireExportAllMenu(statusEl) {
     const menu = el('exportAllMenu');
     if (!trigger || !menu) return;
 
-    const { close, toggle } = wireDropdownToggle(trigger, menu);
+    // #pieceListBox 在桌面版有 overflow:hidden（用來讓內部清單自己捲動、不撐爆版面），
+    // 選單原本用 position:absolute 往下彈會被這層裁掉，跟浮動工具列那個 overflow 裁切
+    // 是同一種病灶，所以同樣需要 portal:true。
+    const { close, toggle } = wireDropdownToggle(trigger, menu, null, { portal: true });
     trigger.addEventListener('click', toggle);
 
     async function runAndClose(kinds) {
@@ -835,11 +964,31 @@ function wirePropertiesPanel(statusEl) {
     store.addEventListener('active-piece-changed', syncRotateButtons);
     syncRotateButtons();
 
-    bindRangeNumberPair('rotationRange', 'rotationValue', (v) => {
+    // 旋轉角度輸入框：直接輸入變更沿用既有的正規化寫法（-180~180 顯示值換算成 0~360 儲存值）；
+    // ±1°/±15° 微調鈕與滾輪（見下方）共用同一個 applyRotation，全部改的是同一個 piece.rotation 欄位。
+    function applyRotation(v) {
         const piece = store.getActivePiece();
         if (!piece) return;
         store.updatePiece(piece.id, { rotation: ((v % 360) + 360) % 360 });
+    }
+    el('rotationValue').addEventListener('change', (evt) => {
+        const n = Number(evt.target.value);
+        if (!Number.isNaN(n)) applyRotation(n);
     });
+    function nudgeRotation(delta, evt) {
+        const piece = store.getActivePiece();
+        if (!piece) return;
+        const step = evt.shiftKey ? 15 : 1;
+        const dispRotation = piece.rotation > 180 ? piece.rotation - 360 : piece.rotation;
+        applyRotation(dispRotation + delta * step);
+    }
+    el('btnRotateMinus').addEventListener('click', (evt) => nudgeRotation(-1, evt));
+    el('btnRotatePlus').addEventListener('click', (evt) => nudgeRotation(1, evt));
+    // passive:false 是能呼叫 preventDefault() 阻止頁面隨滾輪捲動的必要條件。
+    el('rotationValue').addEventListener('wheel', (evt) => {
+        evt.preventDefault();
+        nudgeRotation(evt.deltaY < 0 ? 1 : -1, evt);
+    }, { passive: false });
 
     el('pieceNameInput').addEventListener('change', (evt) => {
         const piece = store.getActivePiece();
@@ -861,14 +1010,27 @@ function wirePropertiesPanel(statusEl) {
         });
     });
 
-    el('btnFlattenLasso').addEventListener('click', () => {
+    el('btnFlattenLasso').addEventListener('click', async () => {
         const piece = store.getActivePiece();
         if (!piece) return;
         const loops = loopsFromSelection(piece.selection);
         if (loops.length <= 1) return;
-        const flattened = flattenLoops(loops);
-        store.updatePiece(piece.id, { selection: { type: 'lasso', loops: flattened } });
-        announce(statusEl, `已平面化選取，合併為 ${flattened.length} 個區塊`);
+        const btn = el('btnFlattenLasso');
+        // 平面化的點陣化＋描邊＋巢狀深度比對搬到 Worker 執行（見 selection-worker.js），
+        // 這裡先切成忙碌狀態，避免使用者以為點擊沒反應；失敗時才需要手動還原 disabled，
+        // 成功時交給 store 的 piece-changed → syncPropertiesPanel 依新的區塊數重新判斷。
+        btn.disabled = true;
+        btn.classList.add('is-loading');
+        try {
+            const flattened = await flattenLoopsAsync(loops);
+            store.updatePiece(piece.id, { selection: { type: 'lasso', loops: flattened } });
+            announce(statusEl, `已平面化選取，合併為 ${flattened.length} 個區塊`);
+        } catch (err) {
+            btn.disabled = false;
+            announce(statusEl, '平面化失敗，請稍後再試');
+        } finally {
+            btn.classList.remove('is-loading');
+        }
     });
 
     el('btnClearLasso').addEventListener('click', () => {
@@ -934,6 +1096,18 @@ function wirePropertiesPanel(statusEl) {
         delete bgRemoval.threshold;
         delete bgRemoval.softness;
         store.updatePiece(piece.id, { bgRemoval });
+    });
+
+    bindRangeNumberPair('bgDespeckle', 'bgDespeckleValue', (n) => {
+        const piece = store.getActivePiece();
+        if (!piece) return;
+        store.updatePiece(piece.id, { bgRemoval: { ...piece.bgRemoval, despeckle: n } });
+    });
+
+    bindRangeNumberPair('bgStrokeEnhance', 'bgStrokeEnhanceValue', (n) => {
+        const piece = store.getActivePiece();
+        if (!piece) return;
+        store.updatePiece(piece.id, { bgRemoval: { ...piece.bgRemoval, strokeEnhance: n } });
     });
 
     el('svgVectorEnabled').addEventListener('change', (evt) => {
@@ -1031,11 +1205,15 @@ function renderLassoLoopList(container, piece, statusEl) {
     });
 }
 
-// 去背關閉時去背強度完全沒有可見效果，停用滑桿避免使用者疑惑。
+// 去背關閉時去背強度／去除雜點／增強筆畫都完全沒有可見效果，一併停用避免使用者疑惑。
 function syncBgStrengthDisabledState(bgRemovalEnabled) {
     const disabled = !bgRemovalEnabled;
     el('bgStrength').disabled = disabled;
     el('bgStrengthValue').disabled = disabled;
+    el('bgDespeckle').disabled = disabled;
+    el('bgDespeckleValue').disabled = disabled;
+    el('bgStrokeEnhance').disabled = disabled;
+    el('bgStrokeEnhanceValue').disabled = disabled;
 }
 
 function syncPropertiesPanel(statusEl) {
@@ -1051,7 +1229,6 @@ function syncPropertiesPanel(statusEl) {
 
     el('pieceNameInput').value = piece.name;
     const dispRotation = Math.round((piece.rotation > 180 ? piece.rotation - 360 : piece.rotation) * 10) / 10;
-    el('rotationRange').value = String(dispRotation);
     el('rotationValue').value = String(dispRotation);
 
     const isRect = piece.selection.type === 'rect';
@@ -1081,6 +1258,10 @@ function syncPropertiesPanel(statusEl) {
     el('bgSampleSwatch').style.backgroundColor = `rgb(${piece.bgRemoval.sampleColor.r}, ${piece.bgRemoval.sampleColor.g}, ${piece.bgRemoval.sampleColor.b})`;
     el('bgStrength').value = piece.bgRemoval.strength ?? 50;
     el('bgStrengthValue').value = piece.bgRemoval.strength ?? 50;
+    el('bgDespeckle').value = piece.bgRemoval.despeckle ?? 0;
+    el('bgDespeckleValue').value = piece.bgRemoval.despeckle ?? 0;
+    el('bgStrokeEnhance').value = piece.bgRemoval.strokeEnhance ?? 0;
+    el('bgStrokeEnhanceValue').value = piece.bgRemoval.strokeEnhance ?? 0;
 
     el('svgVectorEnabled').checked = piece.svgExport?.enabled ?? false;
     el('svgSimplify').value = piece.svgExport?.simplifyTolerance ?? 0.75;

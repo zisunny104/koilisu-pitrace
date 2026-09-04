@@ -496,11 +496,35 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         background: var(--ts-gray-300, #ddd);
     }
 
+    /* 工具 radiogroup 跟它的模式彈出鈕（選取模式／橡皮擦筆刷大小）視覺上是同一組，
+       窄 gap 包成一叢、不用分隔線隔開，比照 Figma 工具列「圖示鈕＋緊貼小箭頭」的作法。 */
+    .pane-tool-cluster {
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+    }
+
+    /* 彈出鈕只是「還有更多選項」的箭頭指示，縮小成窄長條，附屬於旁邊工具而非平行按鈕。 */
+    .pane-tool-chevron.ts-button.is-icon {
+        --height: 1.6rem;
+        min-width: 1.2rem;
+        padding-left: 0.15rem;
+        padding-right: 0.15rem;
+    }
+
+    .pane-tool-chevron .ts-icon {
+        font-size: 0.85rem;
+    }
+
     /* 「匯出全部」下拉選單：不用原生 popover（top-layer 定位在不同瀏覽器間不夠穩定），
        改用相對定位容器 + JS 切換 hidden，跟畫布浮動工具列同一手法自己控制位置。 */
     .pane-menu-wrap {
         position: relative;
         display: inline-flex;
+    }
+
+    .pane-menu-wrap[hidden] {
+        display: none;
     }
 
     .pane-dropdown-menu {
@@ -509,21 +533,22 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         right: 0;
         z-index: 20;
         min-width: 14rem;
+        /* portal 出去的選單用 shrink-to-fit 量寬度，不夾上限的話會被內部不換行的長句撐寬。 */
+        max-width: 16rem;
         background: var(--ts-gray-50, #fff);
         border: 1px solid var(--ts-gray-300, #ddd);
         border-radius: var(--ts-border-radius-container, 8px);
         box-shadow: var(--ts-elevated-shadow, 0 8px 24px rgba(0, 0, 0, 0.2));
-        padding: 0.3rem;
+        padding: 0.25rem;
+        font-size: 0.9rem;
     }
 
     .pane-dropdown-menu[hidden] {
         display: none;
     }
 
-    /* Tocas 的 .ts-icon 基礎規則本身就寫死 display:inline，跟原生 [hidden] 屬性的
-       UA 樣式（display:none）specificity 打平時後者輸——因為瀏覽器套用作者樣式表一律晚於
-       UA 樣式表。單純設定 icon.hidden = true 在 JS 那端看起來是對的，畫面卻不會真的消失。
-       用 class+屬性的複合選擇器把 specificity 疊高，才能穩贏、不需要 !important。 */
+    /* .ts-icon 基礎規則寫死 display:inline，跟原生 [hidden] 的 UA 樣式 specificity 打平時
+       後者輸，用複合選擇器疊高 specificity 才能穩贏、不需要 !important。 */
     .ts-icon[hidden] {
         display: none;
     }
@@ -532,6 +557,31 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         border-radius: var(--ts-border-radius-secondary, 6px);
         white-space: nowrap;
         cursor: pointer;
+        padding: 0.3rem 0.5rem;
+    }
+
+    /* 選取模式這類單選選單，不用打勾圖示，用醒目底色做選中/未選中的階層差異，
+       比照上面 .preview-bg-toggle-item 的 input:checked 寫法，:has() 讓整列都亮起來。 */
+    .pane-dropdown-menu.is-select-list .item:has(input:checked) {
+        background: var(--ts-primary-100, #dbeafe);
+        color: var(--ts-primary-700, #1d4ed8);
+    }
+
+    .pane-dropdown-menu .item + .item {
+        margin-top: 0.1rem;
+    }
+
+    .pane-dropdown-menu .range-row {
+        gap: 0.4rem;
+    }
+
+    .pane-dropdown-menu .has-top-spaced-small {
+        margin-top: 0.35rem;
+    }
+
+    .pane-dropdown-menu .ts-text.is-description {
+        font-size: 0.78rem;
+        line-height: 1.35;
     }
 
     /* 圖片清單下拉：每列是「切換使用中圖片」「重新命名」「刪除」三個各自獨立的可點擊目標，
@@ -712,6 +762,16 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
     .range-row .ts-input {
         width: 4.5rem;
         flex: none;
+    }
+
+    .rotation-row {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+    }
+
+    .rotation-row .ts-input {
+        flex: 1;
     }
 
     .rgb-inputs {
@@ -898,33 +958,66 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                     <span class="ts-icon is-plus-icon" aria-hidden="true"></span>
                                 </button>
                                 <div class="pane-toolbar-divider" aria-hidden="true"></div>
-                                <div class="ts-selection is-compact" role="radiogroup" aria-label="選取工具">
-                                    <label class="item" data-tooltip="矩形選取（M）">
-                                        <input type="radio" name="tool" value="rect" id="tool-rect" checked aria-label="矩形選取">
-                                        <div class="text"><span class="ts-icon is-crop-simple-icon" aria-hidden="true"></span>
-                                            <span class="has-hidden">矩形</span></div>
-                                    </label>
-                                    <label class="item" data-tooltip="套索選取（L）">
-                                        <input type="radio" name="tool" value="lasso" id="tool-lasso" aria-label="套索選取">
-                                        <div class="text"><span class="ts-icon is-draw-polygon-icon" aria-hidden="true"></span>
-                                            <span class="has-hidden">套索</span></div>
-                                    </label>
-                                    <label class="item" data-tooltip="平移（H）">
-                                        <input type="radio" name="tool" value="pan" id="tool-pan" aria-label="平移">
-                                        <div class="text"><span class="ts-icon is-hand-icon" aria-hidden="true"></span> <span
-                                                class="has-hidden">平移</span></div>
-                                    </label>
-                                    <label class="item" data-tooltip="取樣背景色（I）">
-                                        <input type="radio" name="tool" value="eyedropper" id="tool-eyedropper" aria-label="取樣背景色">
-                                        <div class="text"><span class="ts-icon is-eye-dropper-icon" aria-hidden="true"></span>
-                                            <span class="has-hidden">取樣背景色</span></div>
-                                    </label>
-                                    <label class="item" data-tooltip="橡皮擦（E）">
-                                        <input type="radio" name="tool" value="eraser" id="tool-eraser" aria-label="橡皮擦">
-                                        <div class="text"><span class="ts-icon is-eraser-icon" aria-hidden="true"></span>
-                                            <span class="has-hidden">橡皮擦</span></div>
-                                    </label>
+                                <div class="pane-tool-cluster">
+                                    <div class="ts-selection is-compact" role="radiogroup" aria-label="選取工具">
+                                        <label class="item" data-tooltip="矩形選取（M）">
+                                            <input type="radio" name="tool" value="rect" id="tool-rect" checked aria-label="矩形選取">
+                                            <div class="text"><span class="ts-icon is-crop-simple-icon" aria-hidden="true"></span>
+                                                <span class="has-hidden">矩形</span></div>
+                                        </label>
+                                        <label class="item" data-tooltip="套索選取（L）">
+                                            <input type="radio" name="tool" value="lasso" id="tool-lasso" aria-label="套索選取">
+                                            <div class="text"><span class="ts-icon is-draw-polygon-icon" aria-hidden="true"></span>
+                                                <span class="has-hidden">套索</span></div>
+                                        </label>
+                                        <label class="item" data-tooltip="平移（H）">
+                                            <input type="radio" name="tool" value="pan" id="tool-pan" aria-label="平移">
+                                            <div class="text"><span class="ts-icon is-hand-icon" aria-hidden="true"></span> <span
+                                                    class="has-hidden">平移</span></div>
+                                        </label>
+                                        <label class="item" data-tooltip="取樣背景色（I）">
+                                            <input type="radio" name="tool" value="eyedropper" id="tool-eyedropper" aria-label="取樣背景色">
+                                            <div class="text"><span class="ts-icon is-eye-dropper-icon" aria-hidden="true"></span>
+                                                <span class="has-hidden">取樣背景色</span></div>
+                                        </label>
+                                        <label class="item" data-tooltip="橡皮擦（E）">
+                                            <input type="radio" name="tool" value="eraser" id="tool-eraser" aria-label="橡皮擦">
+                                            <div class="text"><span class="ts-icon is-eraser-icon" aria-hidden="true"></span>
+                                                <span class="has-hidden">橡皮擦</span></div>
+                                        </label>
+                                    </div>
+
+                                    <div class="pane-menu-wrap" id="selectionModeMenuWrap">
+                                        <button id="btnSelectionModeMenu" class="ts-button is-icon is-ghost pane-tool-chevron"
+                                            aria-label="選取模式：加選" aria-haspopup="menu" aria-expanded="false"
+                                            data-tooltip="選取模式（目前：加選）">
+                                            <span class="ts-icon is-chevron-down-icon" aria-hidden="true"></span>
+                                        </button>
+                                        <div class="ts-menu pane-dropdown-menu is-select-list" id="selectionModeMenu" role="radiogroup"
+                                            aria-label="選取模式" hidden>
+                                            <label class="item"><input type="radio" name="selMode" value="add" checked> <span>加選（＋）</span></label>
+                                            <label class="item"><input type="radio" name="selMode" value="subtract"> <span>減選（－）</span></label>
+                                            <label class="item"><input type="radio" name="selMode" value="new"> <span>取代全部</span></label>
+                                        </div>
+                                    </div>
+
+                                    <div class="pane-menu-wrap" id="eraserSizeMenuWrap" hidden>
+                                        <button id="btnEraserSizeMenu" class="ts-button is-icon is-ghost pane-tool-chevron"
+                                            aria-label="橡皮擦筆刷大小" aria-haspopup="menu" aria-expanded="false"
+                                            data-tooltip="橡皮擦筆刷大小">
+                                            <span class="ts-icon is-chevron-down-icon" aria-hidden="true"></span>
+                                        </button>
+                                        <div class="ts-menu pane-dropdown-menu" id="eraserSizeMenu" hidden>
+                                            <label class="ts-text is-label" for="eraserRadius">筆刷大小</label>
+                                            <div class="range-row">
+                                                <div class="ts-range"><input type="range" id="eraserRadius" min="5" max="300" value="40"></div>
+                                                <div class="ts-input"><input type="number" id="eraserRadiusValue" min="5" max="300" value="40" aria-label="橡皮擦筆刷大小數值"></div>
+                                            </div>
+                                            <div class="has-top-spaced-small ts-text is-description">快捷鍵 [ / ]（Shift 加大步進）也可以調整；按住 Alt 拖曳＝還原（負向筆刷）。</div>
+                                        </div>
+                                    </div>
                                 </div>
+                                <div class="pane-toolbar-divider" aria-hidden="true"></div>
 
                                 <div class="ts-buttons">
                                     <button id="btnZoomOut" class="ts-button is-icon" aria-label="縮小畫面" data-tooltip="縮小畫面">
@@ -964,15 +1057,15 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                             aria-label="匯出全部物件" hidden>
                                             <button type="button" class="item" role="menuitem" id="btnExportAllPNG">
                                                 <span class="ts-icon is-file-image-icon" aria-hidden="true"></span>
-                                                <span>全部匯出為 PNG</span>
+                                                <span>PNG</span>
                                             </button>
                                             <button type="button" class="item" role="menuitem" id="btnExportAllSVG">
                                                 <span class="ts-icon is-bezier-curve-icon" aria-hidden="true"></span>
-                                                <span>全部匯出為 SVG</span>
+                                                <span>SVG</span>
                                             </button>
                                             <button type="button" class="item" role="menuitem" id="btnExportAllZip">
                                                 <span class="ts-icon is-file-zipper-icon" aria-hidden="true"></span>
-                                                <span>全部匯出 PNG + SVG（ZIP）</span>
+                                                <span>PNG + SVG（ZIP）</span>
                                             </button>
                                         </div>
                                     </div>
@@ -1079,28 +1172,28 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                             </div>
 
                         <div id="propertiesBody" style="display:none;">
-                            <div class="ts-grid is-middle-aligned">
-                                <div class="column is-fluid">
-                                    <label class="ts-text is-label" for="rotationRange">旋轉角度</label>
+                            <label class="ts-text is-label" for="rotationValue">旋轉角度</label>
+                            <div class="has-top-spaced-small rotation-row">
+                                <button id="btnRotateLeft" class="ts-button is-icon is-small" aria-label="向左旋轉 90 度"
+                                    data-tooltip="向左旋轉 90 度">
+                                    <span class="ts-icon is-rotate-left-icon" aria-hidden="true"></span>
+                                </button>
+                                <button id="btnRotateMinus" class="ts-button is-icon is-small" aria-label="微調 -1 度（按住 Shift 為 -15 度）"
+                                    data-tooltip="微調 −1°（Shift −15°）">
+                                    <span class="ts-icon is-minus-icon" aria-hidden="true"></span>
+                                </button>
+                                <div class="ts-input">
+                                    <input type="number" id="rotationValue" min="-180" max="180" step="any" value="0"
+                                        aria-label="旋轉角度數值（度），可在此滾動滑鼠滾輪調整">
                                 </div>
-                                <div class="column">
-                                    <div class="ts-buttons">
-                                        <button id="btnRotateLeft" class="ts-button is-icon is-small" aria-label="向左旋轉 90 度"
-                                            data-tooltip="向左旋轉 90 度">
-                                            <span class="ts-icon is-rotate-left-icon" aria-hidden="true"></span>
-                                        </button>
-                                        <button id="btnRotateRight" class="ts-button is-icon is-small" aria-label="向右旋轉 90 度"
-                                            data-tooltip="向右旋轉 90 度">
-                                            <span class="ts-icon is-rotate-right-icon" aria-hidden="true"></span>
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="has-top-spaced-small">
-                                <div class="range-row">
-                                    <div class="ts-range"><input type="range" id="rotationRange" min="-180" max="180" step="0.1" value="0"></div>
-                                    <div class="ts-input"><input type="number" id="rotationValue" min="-180" max="180" step="any" value="0" aria-label="旋轉角度數值（度）"></div>
-                                </div>
+                                <button id="btnRotatePlus" class="ts-button is-icon is-small" aria-label="微調 +1 度（按住 Shift 為 +15 度）"
+                                    data-tooltip="微調 +1°（Shift +15°）">
+                                    <span class="ts-icon is-plus-icon" aria-hidden="true"></span>
+                                </button>
+                                <button id="btnRotateRight" class="ts-button is-icon is-small" aria-label="向右旋轉 90 度"
+                                    data-tooltip="向右旋轉 90 度">
+                                    <span class="ts-icon is-rotate-right-icon" aria-hidden="true"></span>
+                                </button>
                             </div>
 
                             <div class="ts-grid has-top-spaced">
@@ -1193,6 +1286,24 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                     <div class="ts-input"><input type="number" id="bgStrengthValue" min="0" max="100" value="50" aria-label="去背強度數值"></div>
                                 </div>
                                 <div class="has-top-spaced-small ts-text is-description">數值愈高愈積極把接近背景色的區域判定為背景；實心筆跡的顏色跟背景差異遠遠超過安全範圍，不會因為調整這個數值而變透明。</div>
+                            </div>
+
+                            <div class="has-top-spaced">
+                                <label class="ts-text is-label" for="bgDespeckle">去除雜點</label>
+                                <div class="range-row">
+                                    <div class="ts-range"><input type="range" id="bgDespeckle" min="0" max="100" value="0"></div>
+                                    <div class="ts-input"><input type="number" id="bgDespeckleValue" min="0" max="100" value="0" aria-label="去除雜點數值"></div>
+                                </div>
+                                <div class="has-top-spaced-small ts-text is-description">把跟主要筆畫不相連、面積很小的獨立雜點視為背景去掉；預設 0（不去除），數值愈高能去掉的雜點愈大，細線本身不會被砍斷。</div>
+                            </div>
+
+                            <div class="has-top-spaced">
+                                <label class="ts-text is-label" for="bgStrokeEnhance">增強筆畫</label>
+                                <div class="range-row">
+                                    <div class="ts-range"><input type="range" id="bgStrokeEnhance" min="0" max="100" value="0"></div>
+                                    <div class="ts-input"><input type="number" id="bgStrokeEnhanceValue" min="0" max="100" value="0" aria-label="增強筆畫數值"></div>
+                                </div>
+                                <div class="has-top-spaced-small ts-text is-description">把去背後留下的筆畫往外增厚，讓太細、斷開的線條變粗、重新連起來；預設 0（不調整）。</div>
                             </div>
 
                             <div class="ts-divider has-vertically-spaced"></div>

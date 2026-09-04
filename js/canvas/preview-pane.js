@@ -14,6 +14,7 @@
 import { store } from '../state.js';
 import { selectionBounds } from '../tools/transform.js';
 import { computeMask, compositeOriginalWithMask } from '../processing/bg-remove.js';
+import { connectivityScore, dilateMask } from '../processing/mask-refine.js';
 import { traceAlphaContours } from '../processing/vectorize.js';
 import { announce } from '../a11y.js';
 import { buildSelectionMask } from './selection-mask.js';
@@ -193,11 +194,31 @@ async function renderGeometry(piece, opts = {}) {
  */
 function computeMaskForPiece(piece, originalImageData) {
     if (!piece.bgRemoval?.enabled) return null;
-    return computeMask(originalImageData, piece.bgRemoval.sampleColor, {
+    let mask = computeMask(originalImageData, piece.bgRemoval.sampleColor, {
         strength: piece.bgRemoval.strength,
         threshold: piece.bgRemoval.threshold,
         softness: piece.bgRemoval.softness,
     });
+    const { width, height } = originalImageData;
+
+    // 去除雜點：先濾掉跟主筆畫不相連的小雜點，兩個滑桿的映射公式跟先前 isolationSuppress
+    // 一致（面積比例平方，越調越只挑最小的雜點下手）。0 完全不處理（向後相容既有輸出）。
+    const despeckle = piece.bgRemoval.despeckle ?? 0;
+    if (despeckle > 0) {
+        const minAreaFraction = (despeckle / 100) ** 2 * 0.0009;
+        const score = connectivityScore(mask, width, height, { minAreaFraction });
+        for (let i = 0; i < mask.length; i++) mask[i] *= score[i];
+    }
+
+    // 增強筆畫在去除雜點「之後」執行：先清掉小雜點，再膨脹存活下來的筆畫，避免把原本
+    // 該被濾掉的雜點跟主筆畫黏在一起而躲過過濾。
+    const strokeEnhance = piece.bgRemoval.strokeEnhance ?? 0;
+    if (strokeEnhance > 0) {
+        const radius = Math.round((strokeEnhance / 100) * 4);
+        if (radius > 0) mask = dilateMask(mask, width, height, radius);
+    }
+
+    return mask;
 }
 
 /**
