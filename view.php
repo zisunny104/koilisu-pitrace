@@ -886,7 +886,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                             <div class="pane-empty-state" id="scanEmptyState">
                                 <span class="ts-icon is-images-icon is-heading" aria-hidden="true"></span>
                                 <div class="ts-text is-description">還沒有匯入圖片</div>
-                                <div class="ts-text is-description">點擊上方「匯入圖片」，或將圖片／.pitra 專案檔拖曳到此區域</div>
+                                <div class="ts-text is-description">點擊上方「匯入圖片／PDF」，或將圖片／PDF／.pitra 專案檔拖曳到此區域</div>
                             </div>
                             <div class="pane-loading-state" id="scanLoadingState" style="display:none">
                                 <span class="ts-loading is-centered" aria-hidden="true"></span>
