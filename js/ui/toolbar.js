@@ -326,9 +326,9 @@ function wirePreviewMode() {
     applyMode(matched ? stored : 'result');
 }
 
-// 「匯入圖片」按鈕：還沒有圖片時是單純的匯入按鈕；有圖片後變成下拉選單（觸發鈕顯示目前
+// 「匯入」按鈕：還沒有圖片時是單純的匯入按鈕；有圖片後變成下拉選單（觸發鈕顯示目前
 // 使用中的圖片檔名），選單裡每張圖片一列（點列＝切換使用中圖片，鉛筆＝重新命名，垃圾桶＝刪除），
-// 最下面用分隔線隔開放「匯入圖片」——清單（切換圖片）是較常用的操作放上面，新增放最後，
+// 最下面用分隔線隔開放「匯入」——清單（切換圖片）是較常用的操作放上面，新增放最後，
 // 跟大多數檔案選單「先看現有項目、新增放最後」的慣例一致。
 // 原本是「匯入圖片」按鈕 + 獨立的圖片下拉選單/移除鈕兩組並排，有圖片後兩組同時顯示，
 // 在 .pane-toolbar-buttons 裡疊成兩行擠壓版面；合併成一顆下拉選單後版面固定只有一行。
@@ -465,7 +465,7 @@ function wireScanMenu(statusEl) {
         importItem.setAttribute('role', 'menuitem');
         importItem.appendChild(makeIcon('is-upload-icon'));
         const importLabel = document.createElement('span');
-        importLabel.textContent = '匯入圖片／PDF';
+        importLabel.textContent = '匯入';
         importItem.appendChild(importLabel);
         importItem.addEventListener('click', () => {
             menuToggle.close();
@@ -477,7 +477,7 @@ function wireScanMenu(statusEl) {
     function syncTrigger() {
         const scans = store.project.scans;
         if (scans.length === 0) {
-            btnImportImageLabel.textContent = '匯入圖片／PDF';
+            btnImportImageLabel.textContent = '匯入';
             btnImportImageChevron.hidden = true;
             btnImportImage.removeAttribute('title');
             // 沒有圖片時點下去是直接開檔案選擇窗，不是開選單，aria-haspopup/aria-expanded

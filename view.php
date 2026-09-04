@@ -475,7 +475,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         padding: 1.5rem 1rem;
     }
 
-    /* 「匯入圖片」跟「專案」選單語意上是兩件事（前者匯入照片、後者管理整個專案檔），
+    /* 「匯入」跟「專案」選單語意上是兩件事（前者匯入照片、後者管理整個專案檔），
        特意不用 .ts-buttons 黏在一起，避免看起來像同一顆按鈕的展開選單。 */
     .pane-toolbar-buttons {
         display: flex;
@@ -811,12 +811,12 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                 <div class="pane-menu-wrap">
                                     <button id="btnImportImage" class="ts-button is-primary is-start-icon">
                                         <span class="ts-icon is-upload-icon" aria-hidden="true"></span>
-                                        <span id="btnImportImageLabel">匯入圖片／PDF</span>
+                                        <span id="btnImportImageLabel">匯入</span>
                                         <span class="ts-icon is-chevron-down-icon" id="btnImportImageChevron"
                                             aria-hidden="true" hidden></span>
                                     </button>
-                                    <!-- 匯入前是單純的「匯入圖片」按鈕；有圖片後變成下拉選單：清單本身（切換圖片）
-                                         是較常用的操作放上面，「匯入圖片」放最下面、用分隔線隔開。 -->
+                                    <!-- 匯入前是單純的「匯入」按鈕；有圖片後變成下拉選單：清單本身（切換圖片）
+                                         是較常用的操作放上面，「匯入」放最下面、用分隔線隔開。 -->
                                     <div class="ts-menu pane-dropdown-menu" id="scanMenu" role="menu"
                                         aria-label="圖片清單" hidden>
                                         <!-- 動態生成 -->
@@ -886,7 +886,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                             <div class="pane-empty-state" id="scanEmptyState">
                                 <span class="ts-icon is-images-icon is-heading" aria-hidden="true"></span>
                                 <div class="ts-text is-description">還沒有匯入圖片</div>
-                                <div class="ts-text is-description">點擊上方「匯入圖片／PDF」，或將圖片／PDF／.pitra 專案檔拖曳到此區域</div>
+                                <div class="ts-text is-description">點擊上方「匯入」，或將圖片／PDF／.pitra 專案檔拖曳到此區域</div>
                             </div>
                             <div class="pane-loading-state" id="scanLoadingState" style="display:none">
                                 <span class="ts-loading is-centered" aria-hidden="true"></span>
