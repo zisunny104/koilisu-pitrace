@@ -303,8 +303,8 @@ export async function exportPiecePNG(piece) {
  * 不需要走 renderPiece() 整套「去背合成」流程（那是為了算出正確的 RGB 去污染顏色，
  * 但描邊完全用不到顏色，繞這一圈只是白白多算三個通道的局部背景估算＋逐像素去污染）。
  */
-async function tracePieceVector(piece) {
-    const geo = await renderGeometry(piece, { maxDim: 0 });
+async function tracePieceVector(piece, opts = {}) {
+    const geo = await renderGeometry(piece, { maxDim: opts.maxDim });
     if (!geo) return null;
     const { canvas, originalImageData } = geo;
     const { width, height } = originalImageData;
@@ -328,9 +328,13 @@ async function tracePieceVector(piece) {
     return traceAlphaContours(imageData, { threshold: 128, simplifyTolerance: tolerance });
 }
 
-/** 向量預覽：把描出的輪廓實心填黑畫在畫布上，讓使用者在匯出前先看到 SVG 會長怎樣。 */
+/** 向量預覽：把描出的輪廓實心填黑畫在畫布上，讓使用者在匯出前先看到 SVG 會長怎樣。
+ * 描邊分析在 maxPreviewDim 這個尺度上進行（不用完整原始解析度）：一來跟其他預覽模式共用同一份
+ * geometryCache，避免跟縮圖清單互相搶同一個快取格互相剃掉重建；二來去背強度/旋轉這類滑桿
+ * 拖曳時，每個影格都要重新跑一次 marching squares＋Douglas-Peucker＋貝茲擬合，維持原始解析度
+ * （可能上千萬像素）會嚴重卡頓。匯出（exportPieceSVG）才用完整解析度描邊。 */
 export async function renderPieceVectorPreview(piece, opts = {}) {
-    const traced = await tracePieceVector(piece);
+    const traced = await tracePieceVector(piece, {});
     if (!traced) return null;
     const { pathD, width, height, nodeCount } = traced;
     const canvas = new OffscreenCanvas(Math.max(1, width), Math.max(1, height));
@@ -344,7 +348,7 @@ export async function renderPieceVectorPreview(piece, opts = {}) {
 
 /** 匯出一律以完整原始解析度重新描邊，跟向量預覽一樣共用 tracePieceVector。 */
 export async function exportPieceSVG(piece) {
-    const traced = await tracePieceVector(piece);
+    const traced = await tracePieceVector(piece, { maxDim: 0 });
     if (!traced) return null;
     const { pathD, width, height } = traced;
     // viewBox 維持原始像素座標系不變（pathD 完全不用換算），只有外層 width/height 帶不帶
