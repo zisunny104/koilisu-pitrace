@@ -359,8 +359,8 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
     }
 
     /* 依目前工具切換游標樣式（見 scan-view.js 的 _updateCursorClass）：
-       矩形/套索共用一套修飾鍵游標——Shift 加選、Alt 減選都用十字＋色塊角標
-       （藍色＋／紅色－）辨識，純拖曳（無修飾鍵）則是純十字，代表會新建取代選取；
+       矩形/套索共用一套修飾鍵游標——已有選取時，預設（無修飾鍵）＝加選，用十字＋藍色＋角標；
+       Alt＝減選，用十字＋紅色－角標；Shift＝取代整個選取，跟完全沒有選取時一樣用純十字；
        橡皮擦改用 cursor:none，實際筆刷範圍改由 canvas 疊圖即時畫出（見 eraser.js drawOverlay），
        因為 CSS 游標圖是螢幕固定尺寸，沒辦法反映縮放後筆刷實際涵蓋的影像範圍；
        平移游標（cursor-pan / is-pan-armed）也同時涵蓋滑鼠中鍵按住拖曳的情況（見 scan-view.js

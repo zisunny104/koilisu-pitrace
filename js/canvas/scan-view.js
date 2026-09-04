@@ -8,7 +8,7 @@ import { EraserTool } from '../tools/eraser.js';
 import { EyedropperTool } from '../processing/bg-remove.js';
 import { announce } from '../a11y.js';
 import { buildSelectionMask } from './selection-mask.js';
-import { mergedLoopOutline } from './selection-geometry.js';
+import { mergedLoopOutline, loopsFromSelection } from './selection-geometry.js';
 
 class PanTool {
     onPointerDown(imgPt, evt, view) {
@@ -140,8 +140,16 @@ export class ScanView {
         store.addEventListener('scan-downscaled', (e) => {
             this.announce(`圖片解析度過大，已自動縮小為 ${e.detail.width}×${e.detail.height} 並轉存為 WebP`);
         });
-        store.addEventListener('active-piece-changed', () => this.draw());
-        store.addEventListener('piece-changed', () => this.draw());
+        // 游標現在會反映「有沒有既有選取」（見 _updateCursorClass），換物件或選取內容變動
+        // （例如加選/減選、或被 flatten 後歸零）都要跟著重新判斷，不只是重繪畫面。
+        store.addEventListener('active-piece-changed', () => {
+            this._updateCursorClass();
+            this.draw();
+        });
+        store.addEventListener('piece-changed', () => {
+            this._updateCursorClass();
+            this.draw();
+        });
         store.addEventListener('tool-changed', (e) => {
             this._currentTool()?.onCancel?.(this);
             this._activeToolName = e.detail.tool;
@@ -158,11 +166,17 @@ export class ScanView {
         if (this._spaceHeld || this._middlePanActive) return; // is-pan-armed 已經處理（見 _onKeyDown/_onKeyUp/中鍵處理）
         switch (this._activeToolName) {
             case 'rect':
-            case 'lasso':
-                if (this._shiftHeld) this.canvas.classList.add('cursor-select-add');
+            case 'lasso': {
+                // 跟 LassoTool/RectSelectTool.onPointerDown 的 draftMode 判斷同一套規則：完全沒有
+                // 既有選取時修飾鍵無意義，一律是新建十字；有既有選取時預設＝加選，Alt＝減選，
+                // Shift＝取代整個選取（跟無選取時共用同一個新建十字，沒有另外的「取代」圖示）。
+                const piece = store.getActivePiece();
+                const hasSelection = !!piece && loopsFromSelection(piece.selection).length > 0;
+                if (!hasSelection || this._shiftHeld) this.canvas.classList.add('cursor-crosshair');
                 else if (this._altHeld) this.canvas.classList.add('cursor-select-subtract');
-                else this.canvas.classList.add('cursor-crosshair');
+                else this.canvas.classList.add('cursor-select-add');
                 break;
+            }
             case 'eraser':
                 this.canvas.classList.add('cursor-eraser');
                 break;

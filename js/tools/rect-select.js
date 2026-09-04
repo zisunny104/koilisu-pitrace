@@ -1,7 +1,7 @@
-// 矩形選取工具：滑鼠拖曳定義選取範圍。跟套索工具統一 Photoshop 式修飾鍵語意——
-// 純拖曳＝新建（取代既有選取）、Shift+拖曳＝加選、Alt+拖曳＝減選（見 lasso.js 同款邏輯）。
-// 加/減選時矩形會轉成 loop 疊進既有選取（selection-geometry.js 的 rectToLoop），選取型別
-// 因此變成 'lasso'；純新建才維持原本單純的 'rect' 型別。
+// 矩形選取工具：滑鼠拖曳定義選取範圍。修飾鍵語意跟套索工具統一（見 lasso.js 同款邏輯）：
+// 已有選取時純拖曳＝加選（安全預設，不誤刪先前框好的範圍），Shift+拖曳＝取代整個選取，
+// Alt+拖曳＝減選；完全沒有選取時純拖曳才是新建。加/減選時矩形會轉成 loop 疊進既有選取
+// （selection-geometry.js 的 rectToLoop），選取型別因此變成 'lasso'；新建才維持單純的 'rect' 型別。
 // 鍵盤等效操作在屬性面板的 X/Y/寬/高 數字輸入（由 ui/toolbar.js 綁定）。
 
 import { store } from '../state.js';
@@ -20,8 +20,8 @@ export class RectSelectTool {
         const existingLoops = loopsFromSelection(piece.selection);
         // 完全沒有既有選取時修飾鍵無意義（沒東西可加/減），一律當新建。修飾鍵狀態在拖曳
         // 開始時就決定好、中途放開不會回頭改變（跟 LassoTool 一致，避免拖到一半游標移出
-        // 畫布漏接 keyup 導致行為跳變）。
-        this.draftMode = existingLoops.length === 0 ? 'new' : evt.shiftKey ? 'add' : evt.altKey ? 'subtract' : 'new';
+        // 畫布漏接 keyup 導致行為跳變）。有既有選取時預設是加選（安全），要整個取代才需要按 Shift。
+        this.draftMode = existingLoops.length === 0 ? 'new' : evt.altKey ? 'subtract' : evt.shiftKey ? 'new' : 'add';
         this.dragStart = imgPt;
         this.draftRect = { x: imgPt.x, y: imgPt.y, w: 0, h: 0 };
     }
