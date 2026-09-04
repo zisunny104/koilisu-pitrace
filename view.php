@@ -811,7 +811,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                 <div class="pane-menu-wrap">
                                     <button id="btnImportImage" class="ts-button is-primary is-start-icon">
                                         <span class="ts-icon is-upload-icon" aria-hidden="true"></span>
-                                        <span id="btnImportImageLabel">匯入圖片</span>
+                                        <span id="btnImportImageLabel">匯入圖片／PDF</span>
                                         <span class="ts-icon is-chevron-down-icon" id="btnImportImageChevron"
                                             aria-hidden="true" hidden></span>
                                     </button>
@@ -830,7 +830,8 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                         </div>
                     </div>
                     <input type="file" id="fileOpenProject" accept=".pitra" class="visually-hidden">
-                    <input type="file" id="fileImportImage" accept="image/png,image/jpeg,image/webp" multiple
+                    <input type="file" id="fileImportImage"
+                        accept="image/png,image/jpeg,image/webp,application/pdf,.pdf" multiple
                         class="visually-hidden">
                 </div>
 

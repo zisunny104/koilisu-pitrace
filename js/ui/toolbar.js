@@ -8,6 +8,7 @@ import { serializeProject, parseProjectZip } from '../pitra-format.js';
 import { zipWrite } from '../pitra-zip.js';
 import { sampleBorderColor } from '../processing/bg-remove.js';
 import { detectImageDpi } from '../processing/image-metadata.js';
+import { renderPdfPages } from '../processing/pdf-import.js';
 import { announce } from '../a11y.js';
 import { clearSnapshot } from '../autosave.js';
 import { setPreviewMode } from './preview-mode.js';
@@ -136,6 +137,37 @@ async function importImageFiles(files, statusEl) {
     return imageFiles.length;
 }
 
+// PDF 匯入：每一頁渲染成一張獨立的掃描圖，落地流程比照 importImageFiles——專案名稱只在
+// 「還是全新專案」時代入（這裡用 PDF 檔名），每頁再各自呼叫 store.addScan()，超過
+// MAX_SCAN_PIXELS 時會由 state.js 既有的延遲壓縮機制自動轉 webp，這裡不用另外處理。
+async function importPdfFiles(files, statusEl) {
+    const pdfFiles = files.filter((file) => file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'));
+    if (!pdfFiles.length) return 0;
+    const isFreshProject = store.project.scans.length === 0 && store.project.name === '未命名專案';
+    let first = true;
+    let totalPages = 0;
+    for (const file of pdfFiles) {
+        const baseName = stripExtension(file.name);
+        if (first && isFreshProject) {
+            store.project.name = baseName;
+            el('projectNameInput').value = store.project.name;
+        }
+        first = false;
+        announce(statusEl, `正在匯入 PDF「${file.name}」…`);
+        const buf = await file.arrayBuffer();
+        const pages = await renderPdfPages(buf, (page, total) => {
+            announce(statusEl, `正在渲染「${file.name}」第 ${page}/${total} 頁…`);
+        });
+        for (const page of pages) {
+            const filename = `${baseName}_頁面_${page.pageNumber}.png`;
+            await store.addScan({ filename, mime: 'image/png', bytes: page.bytes, width: page.width, height: page.height, dpi: page.dpi });
+        }
+        totalPages += pages.length;
+    }
+    announce(statusEl, `已匯入 ${pdfFiles.length} 份 PDF，共 ${totalPages} 頁`);
+    return pdfFiles.length;
+}
+
 async function openProjectFile(file, statusEl) {
     announce(statusEl, '開啟專案中…');
     try {
@@ -188,7 +220,10 @@ function wireDragDropImport(statusEl) {
         const files = Array.from(evt.dataTransfer?.files || []);
         const projectFile = files.find((f) => f.name.toLowerCase().endsWith('.pitra'));
         if (projectFile) await openProjectFile(projectFile, statusEl);
-        else if (files.length) await importImageFiles(files, statusEl);
+        else if (files.length) {
+            await importImageFiles(files, statusEl);
+            await importPdfFiles(files, statusEl);
+        }
     });
 }
 
@@ -430,7 +465,7 @@ function wireScanMenu(statusEl) {
         importItem.setAttribute('role', 'menuitem');
         importItem.appendChild(makeIcon('is-upload-icon'));
         const importLabel = document.createElement('span');
-        importLabel.textContent = '匯入圖片';
+        importLabel.textContent = '匯入圖片／PDF';
         importItem.appendChild(importLabel);
         importItem.addEventListener('click', () => {
             menuToggle.close();
@@ -442,7 +477,7 @@ function wireScanMenu(statusEl) {
     function syncTrigger() {
         const scans = store.project.scans;
         if (scans.length === 0) {
-            btnImportImageLabel.textContent = '匯入圖片';
+            btnImportImageLabel.textContent = '匯入圖片／PDF';
             btnImportImageChevron.hidden = true;
             btnImportImage.removeAttribute('title');
             // 沒有圖片時點下去是直接開檔案選擇窗，不是開選單，aria-haspopup/aria-expanded
@@ -534,6 +569,7 @@ function wireProjectToolbar(statusEl) {
         btnImportImage.classList.add('is-loading');
         try {
             await importImageFiles(files, statusEl);
+            await importPdfFiles(files, statusEl);
         } finally {
             btnImportImage.disabled = false;
             btnImportImage.classList.remove('is-loading');
