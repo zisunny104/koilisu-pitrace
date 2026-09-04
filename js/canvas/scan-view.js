@@ -606,24 +606,29 @@ export class ScanView {
                 } else {
                     const mask = new OffscreenCanvas(this.bitmap.width, this.bitmap.height);
                     const maskCtx = mask.getContext('2d');
-                    maskCtx.fillStyle = '#000';
-                    maskCtx.strokeStyle = '#000';
                     maskCtx.lineCap = 'round';
                     maskCtx.lineJoin = 'round';
+                    // 還原筆觸（mode:'restore'）要把「已擦除範圍」這個二值遮罩裡對應的區域挖掉
+                    // （destination-out），才能讓紅色標示跟著還原結果同步縮小，不是單純疊色。
                     for (const stroke of piece.eraseStrokes) {
                         const path = stroke.path ?? [];
                         if (!path.length) continue;
                         const r = stroke.radius ?? 40;
+                        maskCtx.save();
+                        maskCtx.globalCompositeOperation = stroke.mode === 'restore' ? 'destination-out' : 'source-over';
+                        maskCtx.fillStyle = '#000';
+                        maskCtx.strokeStyle = '#000';
                         if (path.length === 1) {
                             maskCtx.beginPath();
                             maskCtx.arc(path[0].x, path[0].y, r, 0, Math.PI * 2);
                             maskCtx.fill();
-                            continue;
+                        } else {
+                            maskCtx.lineWidth = r * 2;
+                            maskCtx.beginPath();
+                            path.forEach((p, i) => (i === 0 ? maskCtx.moveTo(p.x, p.y) : maskCtx.lineTo(p.x, p.y)));
+                            maskCtx.stroke();
                         }
-                        maskCtx.lineWidth = r * 2;
-                        maskCtx.beginPath();
-                        path.forEach((p, i) => (i === 0 ? maskCtx.moveTo(p.x, p.y) : maskCtx.lineTo(p.x, p.y)));
-                        maskCtx.stroke();
+                        maskCtx.restore();
                     }
                     maskCtx.globalCompositeOperation = 'source-in';
                     maskCtx.fillStyle = 'rgba(239,68,68,0.45)';

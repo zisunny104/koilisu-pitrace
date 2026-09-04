@@ -136,7 +136,14 @@ async function renderGeometry(piece, opts = {}) {
 
     // 橡皮擦筆劃存在跟選取範圍同一套原始影像座標系，在這裡（裁切之後、旋轉之前）套用才會對得上
     // 使用者在工作區實際拖曳看到的畫面——工作區左側畫布一律顯示未旋轉的原圖。
-    if (piece.eraseStrokes?.length) eraseStrokesInPlace(ctx, piece.eraseStrokes, x, y);
+    if (piece.eraseStrokes?.length) {
+        let cleanSource = null;
+        if (piece.eraseStrokes.some((s) => s.mode === 'restore')) {
+            cleanSource = new OffscreenCanvas(w, h);
+            cleanSource.getContext('2d').drawImage(canvas, 0, 0);
+        }
+        eraseStrokesInPlace(ctx, piece.eraseStrokes, x, y, cleanSource);
+    }
 
     const rotation = ((piece.rotation % 360) + 360) % 360;
     if (rotation !== 0) {
@@ -266,37 +273,75 @@ export async function renderOverlayPreview(piece, opts = {}) {
     return downscaleCanvas(canvas, opts.maxDim ?? maxPreviewDim);
 }
 
-// 橡皮擦：把每一筆存下來的路徑（圓頭圓角線段，寬度＝筆刷直徑）用 destination-out 直接從
-// 畫面挖掉，只影響 alpha，不碰 RGB——跟選取套索遮罩是同一種合成手法，只是資料來源不同
-// （筆刷路徑 vs 使用者畫的封閉區塊）。單點筆劃（點一下沒拖曳）額外補畫一個圓，
-// 否則 lineTo 沒有第二個點時 stroke() 什麼都不會畫。
-function eraseStrokesInPlace(ctx, strokes, offsetX, offsetY) {
-    ctx.save();
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.fillStyle = '#000';
-    ctx.strokeStyle = '#000';
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+// 把單一筆刷路徑（圓頭圓角線段，寬度＝筆刷直徑）畫進指定 ctx，erase/restore 兩種模式
+// 共用同一套形狀邏輯。單點筆劃（點一下沒拖曳）額外補畫一個圓，否則 lineTo 沒有第二個點時
+// stroke() 什麼都不會畫。
+function paintBrushShape(ctx, path, r, offsetX, offsetY) {
+    ctx.beginPath();
+    if (path.length === 1) {
+        ctx.arc(path[0].x - offsetX, path[0].y - offsetY, r, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+    }
+    ctx.lineWidth = r * 2;
+    path.forEach((p, i) => {
+        const px = p.x - offsetX;
+        const py = p.y - offsetY;
+        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    });
+    ctx.stroke();
+}
+
+// 橡皮擦：預設（stroke.mode !== 'restore'）用 destination-out 直接從畫面挖掉筆刷範圍，
+// 只影響 alpha、不碰 RGB——跟選取套索遮罩是同一種合成手法，只是資料來源不同（筆刷路徑
+// vs 使用者畫的封閉區塊）。負向筆刷（stroke.mode === 'restore'）不是單純 undo 上一筆，而是
+// 把筆刷範圍內的內容換回 cleanSource（套用選取遮罩後、還沒被任何橡皮擦動過的乾淨畫面）：
+// 先用跟筆刷同形狀的遮罩把該範圍現有內容清空，再把 cleanSource 裁到同一塊形狀貼回去，
+// 這樣不管這塊區域先前被幾筆擦除疊加過，還原後都會是同一個正確結果，不用管筆觸疊加順序。
+// cleanSource 只有選取範圍內真的有 'restore' 筆觸時才需要（呼叫端負責判斷、省下多建一張
+// 全尺寸 OffscreenCanvas 的成本）。
+function eraseStrokesInPlace(ctx, strokes, offsetX, offsetY, cleanSource) {
+    const w = ctx.canvas.width;
+    const h = ctx.canvas.height;
     for (const stroke of strokes) {
         const path = stroke.path ?? [];
         if (!path.length) continue;
         const r = stroke.radius ?? 40;
-        if (path.length === 1) {
-            ctx.beginPath();
-            ctx.arc(path[0].x - offsetX, path[0].y - offsetY, r, 0, Math.PI * 2);
-            ctx.fill();
+
+        if (stroke.mode !== 'restore') {
+            ctx.save();
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.fillStyle = '#000';
+            ctx.strokeStyle = '#000';
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            paintBrushShape(ctx, path, r, offsetX, offsetY);
+            ctx.restore();
             continue;
         }
-        ctx.lineWidth = r * 2;
-        ctx.beginPath();
-        path.forEach((p, i) => {
-            const px = p.x - offsetX;
-            const py = p.y - offsetY;
-            i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-        });
-        ctx.stroke();
+        if (!cleanSource) continue;
+
+        const brushMask = new OffscreenCanvas(w, h);
+        const bctx = brushMask.getContext('2d');
+        bctx.fillStyle = '#000';
+        bctx.strokeStyle = '#000';
+        bctx.lineCap = 'round';
+        bctx.lineJoin = 'round';
+        paintBrushShape(bctx, path, r, offsetX, offsetY);
+
+        const restoreLayer = new OffscreenCanvas(w, h);
+        const rctx = restoreLayer.getContext('2d');
+        rctx.drawImage(cleanSource, 0, 0);
+        rctx.globalCompositeOperation = 'destination-in';
+        rctx.drawImage(brushMask, 0, 0);
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.drawImage(brushMask, 0, 0);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.drawImage(restoreLayer, 0, 0);
+        ctx.restore();
     }
-    ctx.restore();
 }
 
 /** 匯出一律以完整原始解析度重新渲染，不是把互動預覽的畫面截圖下來；並裁掉選取外框多餘的透明邊界。 */

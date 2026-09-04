@@ -5,6 +5,9 @@
 // 筆刷大小（piece.eraseRadius）不放屬性面板滑桿，改用 [ / ] 即時調整（Photoshop/GIMP 慣例），
 // 游標交給 drawOverlay 畫一個跟著縮放比例走的實際筆刷圓圈，CSS cursor 是螢幕固定尺寸，
 // 沒辦法反映「這個半徑在目前縮放下實際涵蓋多少影像範圍」。
+// 負向筆刷（還原）：比照套索/矩形選取「Alt＝相反動作」的既有慣例，按住 Alt 拖曳把
+// stroke.mode 記成 'restore'，渲染端（preview-pane.js）會把這塊區域還原成套用選取遮罩後、
+// 還沒被任何橡皮擦動過的乾淨狀態——不是單純 undo 上一筆，而是不管疊了幾層擦除都直接復原。
 
 import { store } from '../state.js';
 
@@ -21,6 +24,7 @@ export class EraserTool {
     onPointerDown(imgPt, evt, view) {
         const piece = store.getActivePiece();
         if (!piece) return view.announce('請先選取物件');
+        this.mode = evt.altKey ? 'restore' : 'erase';
         this.draft = [{ x: Math.round(imgPt.x), y: Math.round(imgPt.y) }];
         this.hoverPt = imgPt;
         view.draw();
@@ -28,6 +32,7 @@ export class EraserTool {
 
     onPointerMove(imgPt, evt, view) {
         this.hoverPt = imgPt;
+        this.hoverAlt = evt.altKey;
         if (!this.draft) {
             view.requestDraw();
             return;
@@ -45,12 +50,13 @@ export class EraserTool {
         if (!this.draft) return;
         const piece = store.getActivePiece();
         const draft = this.draft;
+        const mode = this.mode ?? 'erase';
         this.draft = null;
         if (piece) {
             const radius = piece.eraseRadius ?? 40;
-            const strokes = [...(piece.eraseStrokes || []), { path: draft, radius }];
+            const strokes = [...(piece.eraseStrokes || []), { path: draft, radius, mode }];
             store.updatePiece(piece.id, { eraseStrokes: strokes });
-            view.announce(`已擦除一筆，目前共 ${strokes.length} 筆`);
+            view.announce(mode === 'restore' ? `已還原一筆，目前共 ${strokes.length} 筆` : `已擦除一筆，目前共 ${strokes.length} 筆`);
         }
         view.draw();
     }
@@ -73,6 +79,7 @@ export class EraserTool {
         const piece = store.getActivePiece();
         if (!piece) return;
         const radius = piece.eraseRadius ?? 40;
+        const isRestore = this.draft ? this.mode === 'restore' : this.hoverAlt;
         ctx.save();
         ctx.translate(view.tx, view.ty);
         ctx.scale(view.scale, view.scale);
@@ -81,7 +88,7 @@ export class EraserTool {
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.lineWidth = radius * 2;
-            ctx.strokeStyle = 'rgba(239, 68, 68, 0.35)';
+            ctx.strokeStyle = isRestore ? 'rgba(34, 197, 94, 0.35)' : 'rgba(239, 68, 68, 0.35)';
             ctx.beginPath();
             this.draft.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
             ctx.stroke();
@@ -92,7 +99,7 @@ export class EraserTool {
             ctx.beginPath();
             ctx.arc(cursorPt.x, cursorPt.y, radius, 0, Math.PI * 2);
             ctx.lineWidth = 1.5 / view.scale;
-            ctx.strokeStyle = '#ef4444';
+            ctx.strokeStyle = isRestore ? '#22c55e' : '#ef4444';
             ctx.setLineDash([4 / view.scale, 3 / view.scale]);
             ctx.stroke();
         }
@@ -106,6 +113,7 @@ export class EraserTool {
 
     onPointerLeave(view) {
         this.hoverPt = null;
+        this.hoverAlt = false;
         if (!this.draft) view.draw();
     }
 }
