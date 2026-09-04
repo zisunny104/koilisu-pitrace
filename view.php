@@ -1368,7 +1368,26 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         setWidthMode(getPreferredWidth());
         document.getElementById('btnToggleWidth').addEventListener('click', function() {
             const nowFluid = document.getElementById('pageContainer').classList.contains('is-fluid');
-            setWidthMode(nowFluid ? 'contained' : 'fluid');
+            const next = nowFluid ? 'contained' : 'fluid';
+            setWidthMode(next);
+            // 切成滿版寬度時順便進瀏覽器全螢幕；切回標準寬度時如果還在全螢幕就跟著退出。
+            // requestFullscreen 需要使用者手勢才會成功，這裡是在 click handler 內呼叫，符合條件；
+            // 部分環境（例如被 iframe 嵌入、使用者已停用權限）仍可能被拒絕，失敗就靜默略過，
+            // 不影響寬度切換本身已經生效。
+            if (next === 'fluid') {
+                if (document.documentElement.requestFullscreen) {
+                    document.documentElement.requestFullscreen().catch(() => {});
+                }
+            } else if (document.fullscreenElement) {
+                document.exitFullscreen().catch(() => {});
+            }
+        });
+        // 使用者按 Esc 或瀏覽器自己的介面離開全螢幕時，滿版寬度也跟著退回標準寬度，
+        // 讓「全寬度」跟「全螢幕」維持同步，不會卡在「已經不是全螢幕、但頁面還滿版」的中間狀態。
+        document.addEventListener('fullscreenchange', function() {
+            if (!document.fullscreenElement && document.getElementById('pageContainer').classList.contains('is-fluid')) {
+                setWidthMode('contained');
+            }
         });
     });
     </script>
