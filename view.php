@@ -1140,6 +1140,10 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                 <div class="ts-text is-label">套索區塊</div>
                                 <div id="lassoLoopList" class="has-top-spaced-small"></div>
                                 <div class="ts-wrap has-top-spaced-small">
+                                    <button id="btnFlattenLasso" class="ts-button is-small is-outlined is-start-icon">
+                                        <span class="ts-icon is-layer-group-icon" aria-hidden="true"></span>
+                                        平面化選取
+                                    </button>
                                     <button id="btnClearLasso" class="ts-button is-small is-outlined is-negative is-start-icon">
                                         <span class="ts-icon is-trash-icon" aria-hidden="true"></span>
                                         清除套索

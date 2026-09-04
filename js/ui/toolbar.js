@@ -12,6 +12,7 @@ import { renderPdfPages } from '../processing/pdf-import.js';
 import { announce } from '../a11y.js';
 import { clearSnapshot } from '../autosave.js';
 import { setPreviewMode } from './preview-mode.js';
+import { loopsFromSelection, flattenLoops } from '../canvas/selection-geometry.js';
 
 function el(id) {
     return document.getElementById(id);
@@ -860,6 +861,16 @@ function wirePropertiesPanel(statusEl) {
         });
     });
 
+    el('btnFlattenLasso').addEventListener('click', () => {
+        const piece = store.getActivePiece();
+        if (!piece) return;
+        const loops = loopsFromSelection(piece.selection);
+        if (loops.length <= 1) return;
+        const flattened = flattenLoops(loops);
+        store.updatePiece(piece.id, { selection: { type: 'lasso', loops: flattened } });
+        announce(statusEl, `已平面化選取，合併為 ${flattened.length} 個區塊`);
+    });
+
     el('btnClearLasso').addEventListener('click', () => {
         const piece = store.getActivePiece();
         if (!piece || piece.selection.type !== 'lasso' || !piece.selection.loops?.length) return;
@@ -1056,6 +1067,7 @@ function syncPropertiesPanel(statusEl) {
     } else {
         renderLassoLoopList(el('lassoLoopList'), piece, statusEl);
         el('btnClearLasso').disabled = !piece.selection.loops?.length;
+        el('btnFlattenLasso').disabled = (piece.selection.loops?.length ?? 0) <= 1;
     }
 
     el('eraseStrokeStatus').textContent = piece.eraseStrokes?.length ? '已標記擦除區域' : '尚未使用橡皮擦';

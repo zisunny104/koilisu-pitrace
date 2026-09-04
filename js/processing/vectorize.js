@@ -207,12 +207,11 @@ function ringToPathD(ring) {
     return d + 'Z';
 }
 
-/**
- * @param {ImageData} imageData 已完整渲染（含去背 alpha）的像素
- * @param {{threshold?: number, simplifyTolerance?: number}} opts
- * @returns {{ pathD: string, width: number, height: number, nodeCount: number }}
- */
-export function traceAlphaContours(imageData, opts = {}) {
+// 只算到「封閉輪廓的點陣列」為止，不序列化成 path data——平面化選取（見
+// selection-geometry.js 的 flattenLoops）需要在這一步拿到原始節點座標，才能用點在
+// 多邊形內判斷法算出每個輪廓的巢狀深度，重建 add/subtract 標記；traceAlphaContours
+// 則是在這之上多做序列化，供 SVG 匯出／向量預覽用。
+function traceAlphaContourRings(imageData, opts = {}) {
     const { width, height, data } = imageData;
     const threshold = opts.threshold ?? 128;
     const simplifyTolerance = opts.simplifyTolerance ?? 0.75;
@@ -228,12 +227,22 @@ export function traceAlphaContours(imageData, opts = {}) {
     }
 
     const segments = traceSegments(grid, gw, gh, threshold);
-    const rings = assembleRings(segments)
+    return assembleRings(segments)
         .map((ring) => simplifyRing(ring, simplifyTolerance))
         // 內插座標是「補邊後」的格點座標，減 1 換回原始像素座標系。
         .map((ring) => ring.map(([x, y]) => [x - 1, y - 1]));
+}
 
+/**
+ * @param {ImageData} imageData 已完整渲染（含去背 alpha）的像素
+ * @param {{threshold?: number, simplifyTolerance?: number}} opts
+ * @returns {{ pathD: string, width: number, height: number, nodeCount: number }}
+ */
+export function traceAlphaContours(imageData, opts = {}) {
+    const rings = traceAlphaContourRings(imageData, opts);
     const pathD = rings.map(ringToPathD).join(' ');
     const nodeCount = rings.reduce((sum, ring) => sum + ring.length, 0);
-    return { pathD, width, height, nodeCount };
+    return { pathD, width: imageData.width, height: imageData.height, nodeCount };
 }
+
+export { traceAlphaContourRings };

@@ -6,7 +6,7 @@
 // 不是每個 loop 各自節點的總和——兩個重疊矩形合併後是 6 個節點，不是 4+4=8 個。
 
 import { buildSelectionMask } from './selection-mask.js';
-import { traceAlphaContours } from '../processing/vectorize.js';
+import { traceAlphaContours, traceAlphaContourRings } from '../processing/vectorize.js';
 
 // 矩形只是四個節點的特例：矩形選取要跟套索的 loops 一起做加/減選合成時，
 // 先轉成這種四節點 loop 當底，而不是讓 rect/lasso 兩種選取資料格式各自為政。
@@ -60,4 +60,59 @@ export function mergedLoopOutline(loops) {
     const result = { pathD, nodeCount, offsetX: minX, offsetY: minY };
     outlineCache.set(loops, result);
     return result;
+}
+
+// 射線法點在多邊形內判斷，用來重建巢狀深度（見下方 flattenLoops 的說明）。
+function pointInRing(pt, ring) {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [xi, yi] = ring[i];
+        const [xj, yj] = ring[j];
+        const intersect = yi > pt[1] !== yj > pt[1] && pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi;
+        if (intersect) inside = !inside;
+    }
+    return inside;
+}
+
+/**
+ * 平面化選取：把目前（可能是多次加/減選疊出來）的 loops 合併成「最少數量、視覺結果
+ * 完全相同」的一組新 loops。做法跟 mergedLoopOutline 前半段一樣先點陣化再描邊，但這裡
+ * 要保留描出來的每個輪廓分別是不是洞——描邊本身不分輪廓方向（marching squares 接線段
+ * 的順序是任意的，不像一般向量軟體那樣強制外框順時針、洞逆時針），所以改用「這個輪廓
+ * 的起點被其他幾個輪廓包住」來算巢狀深度：深度是偶數（0、2...）代表本體，畫回
+ * buildSelectionMask 要用 add；深度是奇數（1、3...）代表挖洞，要用 subtract。
+ * 深度淺的（外框）要排在前面、深的（洞、洞中島）排在後面，這樣依序疊加 source-over／
+ * destination-out 才會疊出跟原本一樣的形狀，不能沿用描邊時任意的輪廓順序。
+ * @param {Array<{path:{x:number,y:number}[], closed:boolean, mode:'add'|'subtract'}>} loops
+ * @returns {Array<{path:{x:number,y:number}[], closed:boolean, mode:'add'|'subtract'}>}
+ */
+export function flattenLoops(loops) {
+    if (!loops || loops.length === 0) return [];
+    const points = loops.flatMap((l) => l.path);
+    if (!points.length) return [];
+    const xs = points.map((p) => p.x);
+    const ys = points.map((p) => p.y);
+    const minX = Math.floor(Math.min(...xs)) - 1;
+    const minY = Math.floor(Math.min(...ys)) - 1;
+    const maxX = Math.ceil(Math.max(...xs)) + 1;
+    const maxY = Math.ceil(Math.max(...ys)) + 1;
+    const w = Math.max(1, maxX - minX);
+    const h = Math.max(1, maxY - minY);
+
+    const mask = buildSelectionMask(loops, w, h, minX, minY);
+    const imageData = mask.getContext('2d').getImageData(0, 0, w, h);
+    const rings = traceAlphaContourRings(imageData, { threshold: 128, simplifyTolerance: 0.75 });
+    if (!rings.length) return [];
+
+    return rings
+        .map((ring, idx) => ({
+            ring,
+            depth: rings.reduce((count, other, j) => (j === idx ? count : count + (pointInRing(ring[0], other) ? 1 : 0)), 0),
+        }))
+        .sort((a, b) => a.depth - b.depth)
+        .map(({ ring, depth }) => ({
+            path: ring.map(([x, y]) => ({ x: x + minX, y: y + minY })),
+            closed: true,
+            mode: depth % 2 === 0 ? 'add' : 'subtract',
+        }));
 }
