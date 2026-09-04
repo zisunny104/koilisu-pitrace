@@ -540,7 +540,6 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         border-radius: var(--ts-border-radius-container, 8px);
         box-shadow: var(--ts-elevated-shadow, 0 8px 24px rgba(0, 0, 0, 0.2));
         padding: 0.25rem;
-        font-size: 0.9rem;
     }
 
     .pane-dropdown-menu[hidden] {
@@ -553,22 +552,11 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         display: none;
     }
 
+    /* 選中狀態、密度、字級一律交給 Tocas 原生的 is-selected/is-dense/is-small/is-separated
+       修飾 class（見各選單標籤），這裡只補 Tocas 沒有內建的 nowrap/cursor。 */
     .pane-dropdown-menu .item {
-        border-radius: var(--ts-border-radius-secondary, 6px);
         white-space: nowrap;
         cursor: pointer;
-        padding: 0.3rem 0.5rem;
-    }
-
-    /* 選取模式這類單選選單，不用打勾圖示，用醒目底色做選中/未選中的階層差異，
-       比照上面 .preview-bg-toggle-item 的 input:checked 寫法，:has() 讓整列都亮起來。 */
-    .pane-dropdown-menu.is-select-list .item:has(input:checked) {
-        background: var(--ts-primary-100, #dbeafe);
-        color: var(--ts-primary-700, #1d4ed8);
-    }
-
-    .pane-dropdown-menu .item + .item {
-        margin-top: 0.1rem;
     }
 
     .pane-dropdown-menu .range-row {
@@ -877,7 +865,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                     </button>
                                     <!-- 匯入前是單純的「匯入」按鈕；有圖片後變成下拉選單：清單本身（切換圖片）
                                          是較常用的操作放上面，「匯入」放最下面、用分隔線隔開。 -->
-                                    <div class="ts-menu pane-dropdown-menu" id="scanMenu" role="menu"
+                                    <div class="ts-menu is-dense is-small is-separated pane-dropdown-menu" id="scanMenu" role="menu"
                                         aria-label="圖片清單" hidden>
                                         <!-- 動態生成 -->
                                     </div>
@@ -993,11 +981,11 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                             data-tooltip="選取模式（目前：加選）">
                                             <span class="ts-icon is-chevron-down-icon" aria-hidden="true"></span>
                                         </button>
-                                        <div class="ts-menu pane-dropdown-menu is-select-list" id="selectionModeMenu" role="radiogroup"
+                                        <div class="ts-menu is-dense is-small is-separated pane-dropdown-menu" id="selectionModeMenu" role="menu"
                                             aria-label="選取模式" hidden>
-                                            <label class="item"><input type="radio" name="selMode" value="add" checked> <span>加選（＋）</span></label>
-                                            <label class="item"><input type="radio" name="selMode" value="subtract"> <span>減選（－）</span></label>
-                                            <label class="item"><input type="radio" name="selMode" value="new"> <span>取代全部</span></label>
+                                            <button type="button" class="item is-selected" role="menuitemradio" aria-checked="true" data-mode="add">加選（＋）</button>
+                                            <button type="button" class="item" role="menuitemradio" aria-checked="false" data-mode="subtract">減選（－）</button>
+                                            <button type="button" class="item" role="menuitemradio" aria-checked="false" data-mode="new">取代全部</button>
                                         </div>
                                     </div>
 
@@ -1007,7 +995,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                             data-tooltip="橡皮擦筆刷大小">
                                             <span class="ts-icon is-chevron-down-icon" aria-hidden="true"></span>
                                         </button>
-                                        <div class="ts-menu pane-dropdown-menu" id="eraserSizeMenu" hidden>
+                                        <div class="ts-menu is-small pane-dropdown-menu" id="eraserSizeMenu" hidden>
                                             <label class="ts-text is-label" for="eraserRadius">筆刷大小</label>
                                             <div class="range-row">
                                                 <div class="ts-range"><input type="range" id="eraserRadius" min="5" max="300" value="40"></div>
@@ -1053,7 +1041,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                             aria-haspopup="menu" aria-expanded="false">
                                             <span class="ts-icon is-file-export-icon" aria-hidden="true"></span>
                                         </button>
-                                        <div class="ts-menu pane-dropdown-menu" id="exportAllMenu" role="menu"
+                                        <div class="ts-menu is-dense is-small is-separated pane-dropdown-menu" id="exportAllMenu" role="menu"
                                             aria-label="匯出全部物件" hidden>
                                             <button type="button" class="item" role="menuitem" id="btnExportAllPNG">
                                                 <span class="ts-icon is-file-image-icon" aria-hidden="true"></span>
@@ -1114,7 +1102,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                             aria-haspopup="menu" aria-expanded="false">
                                             <span class="ts-icon is-check-icon" aria-hidden="true" id="btnPreviewModeIcon"></span>
                                         </button>
-                                        <div class="ts-menu pane-dropdown-menu" id="previewModeMenu" role="menu"
+                                        <div class="ts-menu is-dense is-small is-separated pane-dropdown-menu" id="previewModeMenu" role="menu"
                                             aria-label="預覽模式" hidden>
                                             <button type="button" class="item" role="menuitemradio" aria-checked="false"
                                                 id="previewMode-original" data-mode="original" data-icon="is-image-icon"

@@ -328,7 +328,9 @@ function wirePreviewMode() {
 
     function applyMode(mode) {
         for (const item of items) {
-            item.setAttribute('aria-checked', String(item.dataset.mode === mode));
+            const checked = item.dataset.mode === mode;
+            item.setAttribute('aria-checked', String(checked));
+            item.classList.toggle('is-selected', checked);
         }
         const active = menu.querySelector(`button[data-mode="${mode}"]`);
         const label = previewModeLabels[mode] ?? previewModeLabels.result;
@@ -657,36 +659,38 @@ function wireCanvasFloatingToolbar(scanView, statusEl) {
     syncCanvasControls();
 }
 
-// 選取模式彈出選單：比照「匯出全部」用 wireDropdownToggle，radiogroup 選定即關閉選單。
-// 觸發鈕圖示固定是 chevron-down；目前選到哪個模式靠選單裡每個選項自己的底色階層表示
-// （見 view.php 的 .is-select-list 樣式），aria-label/tooltip 即時反映目前模式。
+// 選取模式彈出選單：比照「預覽模式」用 menuitemradio 按鈕 + is-selected，wireDropdownToggle
+// 統一開關，選定即關閉選單。觸發鈕圖示固定是 chevron-down，aria-label/tooltip 即時反映目前模式。
 const selectionModeLabels = { add: '加選', subtract: '減選', new: '取代全部' };
 
 function wireSelectionModeMenu() {
     const trigger = el('btnSelectionModeMenu');
     const menu = el('selectionModeMenu');
     if (!trigger || !menu) return;
-    const radios = menu.querySelectorAll('input[name="selMode"]');
+    const items = menu.querySelectorAll('button[data-mode]');
 
     function syncTrigger() {
         const mode = store.selectionMode;
         const label = `選取模式（目前：${selectionModeLabels[mode] || '加選'}）`;
         trigger.setAttribute('aria-label', label);
         trigger.setAttribute('data-tooltip', label);
-        radios.forEach((radio) => { radio.checked = radio.value === mode; });
+        for (const item of items) {
+            const checked = item.dataset.mode === mode;
+            item.setAttribute('aria-checked', String(checked));
+            item.classList.toggle('is-selected', checked);
+        }
     }
 
     const { close, toggle } = wireDropdownToggle(trigger, menu, null, { portal: true });
     trigger.addEventListener('click', toggle);
 
-    radios.forEach((radio) => {
-        radio.addEventListener('change', () => {
-            if (!radio.checked) return;
-            store.setSelectionMode(radio.value);
+    for (const item of items) {
+        item.addEventListener('click', () => {
+            store.setSelectionMode(item.dataset.mode);
             close();
             trigger.focus();
         });
-    });
+    }
 
     store.addEventListener('selection-mode-changed', syncTrigger);
     syncTrigger();
