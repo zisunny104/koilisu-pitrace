@@ -747,6 +747,13 @@ function wireToolOptionVisibility() {
         // 強制關閉，不然切換工具後選單會孤兒式地繼續浮在畫面上。
         if (!showSel && !selMenu.hidden) { selMenu.hidden = true; selTrigger.setAttribute('aria-expanded', 'false'); }
         if (!showEra && !eraMenu.hidden) { eraMenu.hidden = true; eraTrigger.setAttribute('aria-expanded', 'false'); }
+
+        // 矩形／套索共用同一顆模式彈出鈕，把它移到目前實際使用中的那顆按鈕右邊，
+        // 而不是固定黏在整叢的最後面——切矩形時跟著矩形走，切套索時跟著套索走。
+        if (showSel) {
+            const activeLabel = el(tool === 'rect' ? 'tool-rect' : 'tool-lasso').closest('.item');
+            activeLabel.insertAdjacentElement('afterend', selWrap);
+        }
     }
 
     store.addEventListener('tool-changed', sync);

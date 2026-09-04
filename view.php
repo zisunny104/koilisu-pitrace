@@ -531,6 +531,12 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         display: inline-flex;
     }
 
+    /* 選取模式彈出鈕會被 JS 搬進 .ts-selection 裡、緊跟在使用中的那顆工具後面，
+       裡面沒有 gap，補一點左邊距免得跟工具貼在一起。 */
+    .ts-selection .pane-menu-wrap {
+        margin-left: 0.2rem;
+    }
+
     .pane-menu-wrap[hidden] {
         display: none;
     }
