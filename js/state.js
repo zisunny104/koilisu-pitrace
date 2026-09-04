@@ -356,7 +356,13 @@ class Store extends EventTarget {
     setActivePiece(pieceId) {
         const piece = this.project.pieces.find((p) => p.id === pieceId);
         this.activePieceId = pieceId;
-        if (piece) this.activeScanId = piece.scanId;
+        if (piece && piece.scanId !== this.activeScanId) {
+            this.activeScanId = piece.scanId;
+            // scan-changed 要先於 active-piece-changed 觸發：前者驅動 ScanView.loadActiveScan()
+            // 切換工作區顯示的圖片，若順序相反，active-piece-changed 觸發的 draw() 會搶在
+            // 換圖之前對著舊圖畫選取框/擦除標記，位置對不上新載入的圖。
+            this.emit('scan-changed', { scanId: this.activeScanId });
+        }
         this.emit('active-piece-changed', {});
     }
 
