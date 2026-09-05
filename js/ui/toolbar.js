@@ -3,7 +3,7 @@
 
 import { store, createEmptyProject } from '../state.js';
 import { rotatePieceBy, selectionBounds } from '../tools/transform.js';
-import { exportPiecePNG, exportPieceSVG } from '../canvas/preview-pane.js';
+import { exportPiecePNG, exportPieceSVG, renderOriginalPreview } from '../canvas/preview-pane.js';
 import { serializeProject, parseProjectZip } from '../pitra-format.js';
 import { zipWrite } from '../pitra-zip.js';
 import { sampleBorderColor } from '../processing/bg-remove.js';
@@ -24,6 +24,26 @@ function makeIcon(cls) {
     span.className = `ts-icon ${cls}`;
     span.setAttribute('aria-hidden', 'true');
     return span;
+}
+
+// OCR 辨識文字建議物件名稱：故意不當常駐依賴，只在使用者按下辨識鈕時才動態載入 Tesseract.js
+// （純瀏覽器端 WASM 執行、不上傳圖片），避免拖慢一般使用者用不到這個功能時的啟動速度。
+let tesseractLoadPromise = null;
+function loadTesseract() {
+    if (window.Tesseract) return Promise.resolve();
+    if (!tesseractLoadPromise) {
+        tesseractLoadPromise = new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+            script.onload = resolve;
+            script.onerror = () => {
+                tesseractLoadPromise = null;
+                reject(new Error('OCR 引擎載入失敗，請檢查網路連線'));
+            };
+            document.head.appendChild(script);
+        });
+    }
+    return tesseractLoadPromise;
 }
 
 // 共用下拉選單開關邏輯（觸發鈕 + 選單容器）：點外面關閉、Esc 關閉並把焦點還給觸發鈕。
@@ -265,6 +285,7 @@ export function wireUI({ scanView, statusEl }) {
     wirePieceList(statusEl);
     wireExportAllMenu(statusEl);
     wirePropertiesPanel(statusEl);
+    wireOcrNameSuggestion(statusEl);
     wireDragDropImport(statusEl);
     wirePreviewBackground();
     wirePreviewMode();
@@ -952,6 +973,41 @@ function wireExportAllMenu(statusEl) {
     }
     store.addEventListener('project-changed', syncEnabled);
     syncEnabled();
+}
+
+// 辨識目前物件裁切後的內容文字，直接填進名稱欄位當作預覽建議；pieceNameInput 本來就是
+// change（失焦／Enter）才會存檔，使用者不理會、或切去別的物件，建議就等於自動作廢，
+// 不用額外的「復原」邏輯或候選名稱清單 UI。
+function wireOcrNameSuggestion(statusEl) {
+    const btn = el('btnOcrSuggestName');
+    btn.addEventListener('click', async () => {
+        const piece = store.getActivePiece();
+        if (!piece) return announce(statusEl, '請先選取物件');
+        btn.disabled = true;
+        btn.classList.add('is-loading');
+        announce(statusEl, '辨識中，第一次使用需要先下載 OCR 引擎…');
+        try {
+            const [canvas] = await Promise.all([
+                renderOriginalPreview(piece, { maxDim: 0 }),
+                loadTesseract(),
+            ]);
+            if (!canvas) throw new Error('沒有可辨識的內容');
+            const blob = await canvas.convertToBlob({ type: 'image/png' });
+            const { data: { text } } = await Tesseract.recognize(blob, 'chi_tra+eng');
+            const cleaned = text.replace(/\s+/g, ' ').trim().slice(0, 40);
+            if (!cleaned) {
+                announce(statusEl, '沒有辨識到文字');
+                return;
+            }
+            el('pieceNameInput').value = cleaned;
+            announce(statusEl, `辨識結果：「${cleaned}」，按 Enter 套用；不理會（離開或切換物件）就等於放棄`);
+        } catch (err) {
+            announce(statusEl, `辨識失敗：${err.message}`);
+        } finally {
+            btn.disabled = false;
+            btn.classList.remove('is-loading');
+        }
+    });
 }
 
 function wirePropertiesPanel(statusEl) {

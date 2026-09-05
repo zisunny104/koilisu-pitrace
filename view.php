@@ -776,6 +776,16 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         flex: 1;
     }
 
+    .name-row {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+    }
+
+    .name-row .ts-input {
+        flex: 1;
+    }
+
     .rgb-inputs {
         display: flex;
         flex-wrap: wrap;
@@ -1208,8 +1218,15 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                             <div class="ts-grid has-top-spaced">
                                 <div class="column is-16-wide">
                                     <label class="ts-text is-label">物件名稱</label>
-                                    <div class="ts-input is-fluid">
-                                        <input type="text" id="pieceNameInput" aria-label="物件名稱">
+                                    <div class="has-top-spaced-small name-row">
+                                        <div class="ts-input is-fluid">
+                                            <input type="text" id="pieceNameInput" aria-label="物件名稱">
+                                        </div>
+                                        <button id="btnOcrSuggestName" type="button" class="ts-button is-icon is-small"
+                                            aria-label="辨識圖片文字，套用到名稱欄位"
+                                            data-tooltip="辨識文字建議名稱（第一次使用需下載 OCR 引擎，較慢）">
+                                            <span class="ts-icon is-wand-magic-sparkles-icon" aria-hidden="true"></span>
+                                        </button>
                                     </div>
                                 </div>
                             </div>
