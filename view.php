@@ -571,10 +571,13 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         display: none;
     }
 
-    /* 縮放百分比顯示／輸入框沿用 Tocas .ts-button 預設的一般按鈕橫向留白（給文字按鈕用），
-       跟左右緊鄰的縮放圖示鈕（is-icon，幾乎無留白）比起來顯得鬆散，這裡收窄讓整叢更緊密。 */
+    /* 縮放百分比顯示／輸入框沿用 Tocas .ts-button 預設的一般按鈕橫向留白／最小寬度
+       （給文字按鈕用，min-width: 75px），跟左右緊鄰的縮放圖示鈕（is-icon，幾乎無留白）
+       比起來顯得鬆散，這裡收窄讓整叢更緊密；min-width 只留剛好夠放最寬字串「800%」
+       （縮放上限 8 倍）的空間，避免縮放百分比變動時寬度跳動。 */
     #zoomDisplay,
     #zoomInput {
+        min-width: 52px;
         padding-left: 0.3rem;
         padding-right: 0.3rem;
     }
