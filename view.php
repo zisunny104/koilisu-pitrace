@@ -907,6 +907,38 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
 
     .name-row .ts-input {
         flex: 1;
+        position: relative;
+    }
+
+    /* 名稱欄位目前顯示值（不管是 OCR 建議還是手動打的）跟已存檔的物件名稱不一致時，
+       右側內嵌套用／還原兩顆小圓鈕，取代「按 Enter 才生效、切走就作廢」這種看不見
+       的隱性規則，讓使用者可以明確選擇。輸入框右邊留白，避免文字被按鈕蓋住。 */
+    .name-row .ts-input input {
+        padding-right: 3.6rem;
+    }
+
+    .name-input-actions {
+        position: absolute;
+        top: 50%;
+        right: 0.3rem;
+        transform: translateY(-50%);
+        display: flex;
+        gap: 0.25rem;
+    }
+
+    .name-input-actions[hidden] {
+        display: none;
+    }
+
+    .name-input-action {
+        --height: 1.35rem;
+        min-width: 1.35rem;
+        padding: 0;
+        border-radius: 50%;
+    }
+
+    .name-input-action .ts-icon {
+        font-size: 0.7rem;
     }
 
     .rgb-inputs {
@@ -1343,6 +1375,18 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                     <div class="has-top-spaced-small name-row">
                                         <div class="ts-input is-fluid">
                                             <input type="text" id="pieceNameInput" aria-label="物件名稱">
+                                            <div class="name-input-actions" id="pieceNameActions" hidden>
+                                                <button type="button" id="btnPieceNameApply"
+                                                    class="ts-button is-icon is-small is-positive name-input-action"
+                                                    aria-label="套用名稱" data-tooltip="套用">
+                                                    <span class="ts-icon is-check-icon" aria-hidden="true"></span>
+                                                </button>
+                                                <button type="button" id="btnPieceNameRevert"
+                                                    class="ts-button is-icon is-small name-input-action"
+                                                    aria-label="還原名稱" data-tooltip="還原">
+                                                    <span class="ts-icon is-arrow-rotate-left-icon" aria-hidden="true"></span>
+                                                </button>
+                                            </div>
                                         </div>
                                         <button id="btnOcrSuggestName" type="button" class="ts-button is-icon is-small"
                                             aria-label="辨識圖片文字，套用到名稱欄位"

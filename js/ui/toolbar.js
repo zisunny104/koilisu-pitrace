@@ -1002,9 +1002,19 @@ function wireExportAllMenu(statusEl) {
     syncEnabled();
 }
 
-// 辨識目前物件裁切後的內容文字，直接填進名稱欄位當作預覽建議；pieceNameInput 本來就是
-// change（失焦／Enter）才會存檔，使用者不理會、或切去別的物件，建議就等於自動作廢，
-// 不用額外的「復原」邏輯或候選名稱清單 UI。
+// 名稱欄位目前顯示值跟已存檔的 piece.name 不一致時（手動輸入中，或 OCR 剛帶入建議），
+// 顯示右側內嵌的套用／還原鈕；一致時（含還沒選取物件）就隱藏。OCR 建議、手動輸入、
+// 套用、還原、切換物件五個路徑都要呼叫這個函式保持按鈕可見性同步。
+function updateNameInputActions() {
+    const piece = store.getActivePiece();
+    const input = el('pieceNameInput');
+    const actions = el('pieceNameActions');
+    actions.hidden = !piece || input.value.trim() === piece.name;
+}
+
+// 辨識目前物件裁切後的內容文字，直接填進名稱欄位當作預覽建議；輸入框右側會冒出套用／
+// 還原鈕，使用者可以明確選擇，也可以直接按 Enter 套用；不理會（離開欄位或切換物件）
+// 就視為放棄，還原成原本名稱。
 function wireOcrNameSuggestion(statusEl) {
     const btn = el('btnOcrSuggestName');
     btn.addEventListener('click', async () => {
@@ -1027,7 +1037,8 @@ function wireOcrNameSuggestion(statusEl) {
                 return;
             }
             el('pieceNameInput').value = cleaned;
-            announce(statusEl, `辨識結果：「${cleaned}」，按 Enter 套用；不理會（離開或切換物件）就等於放棄`);
+            updateNameInputActions();
+            announce(statusEl, `辨識結果：「${cleaned}」，可按輸入框內的套用／還原鈕決定，或按 Enter 套用；不理會（離開或切換物件）就等於放棄`);
         } catch (err) {
             announce(statusEl, `辨識失敗：${err.message}`);
         } finally {
@@ -1084,10 +1095,23 @@ function wirePropertiesPanel(statusEl) {
         nudgeRotation(evt.deltaY < 0 ? 1 : -1, evt);
     }, { passive: false });
 
-    el('pieceNameInput').addEventListener('change', (evt) => {
+    function commitPieceName(rawValue) {
         const piece = store.getActivePiece();
         if (!piece) return;
-        store.updatePiece(piece.id, { name: evt.target.value.trim() || '未命名物件' });
+        store.updatePiece(piece.id, { name: rawValue.trim() || '未命名物件' });
+    }
+    el('pieceNameInput').addEventListener('change', (evt) => commitPieceName(evt.target.value));
+    el('pieceNameInput').addEventListener('input', updateNameInputActions);
+    // 按套用／還原鈕會先讓輸入框失焦，原生 change 事件搶在 click 之前觸發，等於先把
+    // 未確認的內容存檔，「還原」就會變成還原到剛剛才被存檔的同一個值、等於沒作用。
+    // mousedown 階段 preventDefault 讓輸入框不失焦，change 不會被提前觸發。
+    el('pieceNameActions').addEventListener('mousedown', (evt) => evt.preventDefault());
+    el('btnPieceNameApply').addEventListener('click', () => commitPieceName(el('pieceNameInput').value));
+    el('btnPieceNameRevert').addEventListener('click', () => {
+        const piece = store.getActivePiece();
+        if (!piece) return;
+        el('pieceNameInput').value = piece.name;
+        updateNameInputActions();
     });
 
     ['selX', 'selY', 'selW', 'selH'].forEach((id) => {
@@ -1321,7 +1345,11 @@ function syncPropertiesPanel(statusEl) {
     if (emptyEl) emptyEl.style.display = 'none';
     el('propertiesBody').style.display = '';
 
-    el('pieceNameInput').value = piece.name;
+    const nameInput = el('pieceNameInput');
+    if (document.activeElement !== nameInput) {
+        nameInput.value = piece.name;
+    }
+    updateNameInputActions();
     const dispRotation = Math.round((piece.rotation > 180 ? piece.rotation - 360 : piece.rotation) * 10) / 10;
     el('rotationValue').value = String(dispRotation);
 
