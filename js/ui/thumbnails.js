@@ -56,10 +56,7 @@ export class ThumbnailStrip {
         }
 
         const placeholder = document.createElement('div');
-        placeholder.className = 'thumb-placeholder';
-        const spinner = document.createElement('div');
-        spinner.className = 'ts-loading is-small is-centered';
-        placeholder.appendChild(spinner);
+        placeholder.className = 'thumb-placeholder skeleton';
         const oldVisual = btn.querySelector('canvas, .thumb-placeholder');
         if (oldVisual) oldVisual.replaceWith(placeholder);
         else btn.insertBefore(placeholder, btn.firstChild);
@@ -67,7 +64,7 @@ export class ThumbnailStrip {
         renderPiece(piece, { maxDim: thumbMaxDim }).then((rendered) => {
             if (!placeholder.isConnected) return;
             if (!rendered) {
-                spinner.remove();
+                placeholder.classList.remove('skeleton');
                 return;
             }
             const canvas = document.createElement('canvas');
@@ -111,10 +108,7 @@ export class ThumbnailStrip {
             });
 
             const placeholder = document.createElement('div');
-            placeholder.className = 'thumb-placeholder';
-            const spinner = document.createElement('div');
-            spinner.className = 'ts-loading is-small is-centered';
-            placeholder.appendChild(spinner);
+            placeholder.className = 'thumb-placeholder skeleton';
             btn.appendChild(placeholder);
 
             const label = document.createElement('span');
@@ -132,6 +126,13 @@ export class ThumbnailStrip {
             label.appendChild(labelText);
 
             btn.appendChild(label);
+
+            const progress = document.createElement('div');
+            progress.className = 'piece-thumb-progress';
+            const progressBar = document.createElement('div');
+            progressBar.className = 'piece-thumb-progress-bar';
+            progress.appendChild(progressBar);
+            btn.appendChild(progress);
 
             item.appendChild(btn);
 
@@ -154,7 +155,7 @@ export class ThumbnailStrip {
             renderPiece(piece, { maxDim: thumbMaxDim }).then((rendered) => {
                 if (!placeholder.isConnected) return;
                 if (!rendered) {
-                    spinner.remove();
+                    placeholder.classList.remove('skeleton');
                     return;
                 }
                 const canvas = document.createElement('canvas');

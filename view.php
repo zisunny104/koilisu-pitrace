@@ -416,6 +416,35 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         pointer-events: none;
     }
 
+    /* 底色＋漸層都取自 Tocas 既有的灰階變數，深淺模式切換時變數本身就會跟著變，
+       不用另外寫一份深色版規則。 */
+    .skeleton {
+        background-image: linear-gradient(90deg,
+            var(--ts-gray-200, #e8e8e8) 0%,
+            var(--ts-gray-100, #f2f2f2) 50%,
+            var(--ts-gray-200, #e8e8e8) 100%);
+        background-size: 200% 100%;
+        animation: pitrace-skeleton-shimmer 1.4s ease-in-out infinite;
+    }
+
+    @keyframes pitrace-skeleton-shimmer {
+        0% {
+            background-position: 200% 0;
+        }
+
+        100% {
+            background-position: -200% 0;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+
+        .skeleton,
+        .piece-thumb-progress-bar {
+            animation: none !important;
+        }
+    }
+
     .pane-toolbar {
         display: flex;
         align-items: center;
@@ -531,14 +560,23 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         display: inline-flex;
     }
 
-    /* 選取模式彈出鈕會被 JS 搬進 .ts-selection 裡、緊跟在使用中的那顆工具後面，
-       裡面沒有 gap，補一點左邊距免得跟工具貼在一起。 */
+    /* 選取模式彈出鈕會被 JS 搬進 .ts-selection 裡、緊跟在使用中的那顆工具後面；
+       .ts-selection 本身已有 flex gap，這裡不再額外加左邊距，讓彈出鈕跟正在作用的
+       工具貼得更近。 */
     .ts-selection .pane-menu-wrap {
-        margin-left: 0.2rem;
+        margin-left: 0;
     }
 
     .pane-menu-wrap[hidden] {
         display: none;
+    }
+
+    /* 縮放百分比顯示／輸入框沿用 Tocas .ts-button 預設的一般按鈕橫向留白（給文字按鈕用），
+       跟左右緊鄰的縮放圖示鈕（is-icon，幾乎無留白）比起來顯得鬆散，這裡收窄讓整叢更緊密。 */
+    #zoomDisplay,
+    #zoomInput {
+        padding-left: 0.3rem;
+        padding-right: 0.3rem;
     }
 
     .pane-dropdown-menu {
@@ -675,6 +713,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
     }
 
     .piece-thumb {
+        position: relative;
         width: 120px;
         border: 2px solid transparent;
         border-radius: 8px;
@@ -720,6 +759,77 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         display: flex;
         align-items: center;
         justify-content: center;
+    }
+
+    /* 選擇器特異度刻意跟上面棋盤格那條規則打平（都是兩層 class），
+       靠來源順序（這條在後面）贏過去蓋掉棋盤格，而不是被它蓋掉。 */
+    .piece-thumb .thumb-placeholder.skeleton {
+        background-image: linear-gradient(90deg,
+            var(--ts-gray-200, #e8e8e8) 0%,
+            var(--ts-gray-100, #f2f2f2) 50%,
+            var(--ts-gray-200, #e8e8e8) 100%);
+        background-size: 200% 100%;
+        animation: pitrace-skeleton-shimmer 1.4s ease-in-out infinite;
+    }
+
+    /* 批次匯出時（見 toolbar.js exportAllBundle）用 data-export-state 驅動狀態。 */
+    .piece-thumb-progress {
+        position: absolute;
+        left: 0.3rem;
+        right: 0.3rem;
+        bottom: 0.3rem;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--ts-gray-300, #ddd);
+        overflow: hidden;
+        opacity: 0;
+        transition: opacity 0.15s ease;
+    }
+
+    .piece-thumb[data-export-state] .piece-thumb-progress {
+        opacity: 1;
+    }
+
+    .piece-thumb-progress-bar {
+        position: absolute;
+        top: 0;
+        left: -30%;
+        width: 30%;
+        height: 100%;
+        border-radius: 2px;
+        background: var(--ts-primary-500, #3b82f6);
+    }
+
+    /* 處理中：跑馬燈式不定進度（單一物件的匯出運算是不可分割的一整塊同步工作，
+       算不出真正的百分比，用滑動色塊表示「還在動」）。 */
+    .piece-thumb[data-export-state="active"] .piece-thumb-progress-bar {
+        animation: pitrace-progress-indeterminate 1.1s ease-in-out infinite;
+    }
+
+    /* 完成：滿條＋綠色，停留到整批匯出結束後才淡出（見 toolbar.js）。 */
+    .piece-thumb[data-export-state="done"] .piece-thumb-progress-bar {
+        left: 0;
+        width: 100%;
+        background: var(--ts-positive-500, #22c55e);
+        transition: left 0.2s ease, width 0.2s ease;
+    }
+
+    /* 跳過：該物件尚未設定選取範圍，這次批次匯出沒有產生任何檔案，滿條但用中性灰區隔於成功。 */
+    .piece-thumb[data-export-state="skipped"] .piece-thumb-progress-bar {
+        left: 0;
+        width: 100%;
+        background: var(--ts-gray-500, #999);
+        transition: left 0.2s ease, width 0.2s ease;
+    }
+
+    @keyframes pitrace-progress-indeterminate {
+        0% {
+            left: -30%;
+        }
+
+        100% {
+            left: 100%;
+        }
     }
 
     .piece-thumb .thumb-label {
@@ -960,8 +1070,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                 <div class="ts-text is-description">還沒有匯入圖片</div>
                                 <div class="ts-text is-description">點擊上方「匯入」，或將圖片／PDF／.pitra 專案檔拖曳到此區域</div>
                             </div>
-                            <div class="pane-loading-state" id="scanLoadingState" style="display:none">
-                                <span class="ts-loading is-centered" aria-hidden="true"></span>
+                            <div class="pane-loading-state skeleton" id="scanLoadingState" style="display:none">
                                 <div class="ts-text is-description">圖片載入中…</div>
                             </div>
                             <div class="canvas-floating-toolbar pane-toolbar" role="toolbar" aria-label="編輯工具">
@@ -1170,8 +1279,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                     <div class="ts-text is-description">還沒有可以預覽的選區呢</div>
                                     <div class="ts-text is-description">框選一個物件後會顯示在這裡</div>
                                 </div>
-                                <div class="pane-loading-state" id="previewLoadingState" style="display:none">
-                                    <span class="ts-loading is-centered" aria-hidden="true"></span>
+                                <div class="pane-loading-state skeleton" id="previewLoadingState" style="display:none">
                                 </div>
                             </div>
                         </div>

@@ -197,6 +197,9 @@ async function importPdfFiles(files, statusEl) {
     const isFreshProject = store.project.scans.length === 0 && store.project.name === '未命名專案';
     let first = true;
     let totalPages = 0;
+    // addScan() 每次都會把新加入的頁面設為當前掃描圖，逐頁匯入完會停在最後一頁；
+    // 記下這批匯入第一份 PDF 的第一頁，全部匯入完再切回去，讓使用者從頭開始看。
+    let firstScanId = null;
     for (const file of pdfFiles) {
         const baseName = stripExtension(file.name);
         if (first && isFreshProject) {
@@ -211,10 +214,12 @@ async function importPdfFiles(files, statusEl) {
         });
         for (const page of pages) {
             const filename = `${baseName}_頁面_${page.pageNumber}.png`;
-            await store.addScan({ filename, mime: 'image/png', bytes: page.bytes, width: page.width, height: page.height, dpi: page.dpi });
+            const scan = await store.addScan({ filename, mime: 'image/png', bytes: page.bytes, width: page.width, height: page.height, dpi: page.dpi });
+            if (!firstScanId) firstScanId = scan.id;
         }
         totalPages += pages.length;
     }
+    if (firstScanId) store.setActiveScan(firstScanId);
     announce(statusEl, `已匯入 ${pdfFiles.length} 份 PDF，共 ${totalPages} 頁`);
     return pdfFiles.length;
 }
@@ -902,6 +907,13 @@ function uniqueBaseNameFactory() {
     };
 }
 
+function setThumbExportState(pieceId, state) {
+    const thumb = document.querySelector(`.piece-thumb[data-piece-id="${CSS.escape(pieceId)}"]`);
+    if (!thumb) return;
+    if (state) thumb.dataset.exportState = state;
+    else delete thumb.dataset.exportState;
+}
+
 // 批次匯出全部物件：PNG、SVG 或兩者一起，一律打包成單一 ZIP 再下載——
 // 物件一多的話逐檔跳出下載對話框既擾人、也容易被瀏覽器的多重下載限制擋掉。
 async function exportAllBundle(kinds, statusEl, triggerBtn) {
@@ -915,6 +927,7 @@ async function exportAllBundle(kinds, statusEl, triggerBtn) {
     let skipped = 0;
     try {
         for (const piece of pieces) {
+            setThumbExportState(piece.id, 'active');
             const base = uniqueBaseName((piece.name || 'piece').trim() || 'piece');
             let pieceOk = false;
             if (kinds.includes('png')) {
@@ -932,10 +945,17 @@ async function exportAllBundle(kinds, statusEl, triggerBtn) {
                 }
             }
             if (!pieceOk) skipped += 1;
+            setThumbExportState(piece.id, pieceOk ? 'done' : 'skipped');
+            // 每個物件的匯出運算是同步整塊執行，沒有這個 yield 畫面會整個卡住到全部跑完，進度條也畫不出來。
+            await new Promise((resolve) => setTimeout(resolve, 0));
         }
     } finally {
         triggerBtn.disabled = false;
         triggerBtn.classList.remove('is-loading');
+        // 停留一下再清空狀態，讓使用者看得到「完成」的滿條，不是一閃即逝。
+        setTimeout(() => {
+            for (const piece of pieces) setThumbExportState(piece.id, null);
+        }, 600);
     }
 
     if (!entries.length) return announce(statusEl, '沒有可匯出的物件（尚未設定選取範圍）');
