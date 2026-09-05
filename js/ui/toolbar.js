@@ -780,6 +780,13 @@ function wireToolOptionVisibility() {
             const activeLabel = el(tool === 'rect' ? 'tool-rect' : 'tool-lasso').closest('.item');
             activeLabel.insertAdjacentElement('afterend', selWrap);
         }
+        // 橡皮擦彈出鈕原本是 .ts-selection 外面的手足元素，跟灰底膠囊之間隔著一段膠囊
+        // 自己的邊框，視覺上比矩形／套索那顆（已被搬進膠囊內共用同一個底色）多一層邊界；
+        // 這裡比照矩形／套索的做法搬進膠囊裡、緊跟在橡皮擦那顆後面，去掉這層多餘的視覺間隔。
+        if (showEra) {
+            const eraserLabel = el('tool-eraser').closest('.item');
+            eraserLabel.insertAdjacentElement('afterend', eraWrap);
+        }
     }
 
     store.addEventListener('tool-changed', sync);
