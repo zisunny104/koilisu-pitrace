@@ -560,11 +560,13 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         display: inline-flex;
     }
 
-    /* 選取模式彈出鈕會被 JS 搬進 .ts-selection 裡、緊跟在使用中的那顆工具後面；
-       .ts-selection 本身已有 flex gap，這裡不再額外加左邊距，讓彈出鈕跟正在作用的
-       工具貼得更近。 */
+    /* 選取模式／橡皮擦筆刷大小彈出鈕會被 JS 搬進 .ts-selection 裡、緊跟在使用中的那顆
+       工具後面。但 .ts-selection 本身的 flex gap（0.3rem）是設計給「平行的工具選項」用的
+       間距（例如矩形跟套索之間），彈出鈕不是平行選項、是附屬於前一顆工具的箭頭，兩者
+       關係要更緊——用負邊距把 flex gap 吃掉大半，只留一點點視覺呼吸空間，跟旁邊真正
+       獨立的工具選項拉出間距差異。 */
     .ts-selection .pane-menu-wrap {
-        margin-left: 0;
+        margin-left: -3px;
     }
 
     .pane-menu-wrap[hidden] {
@@ -879,6 +881,14 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         flex: none;
     }
 
+    /* Tocas 數字輸入框預設左右各 15px 內距是給一般寬度輸入框設計的，range-row 這裡
+       固定只有 4.5rem 寬，滑桿數值又可能到三位數（例如橡皮擦筆刷大小上限 300），
+       內距太寬會把數字擠到跟微調箭頭黏在一起、最後一位數看起來被裁掉。 */
+    .range-row .ts-input input {
+        padding-left: 0.3rem;
+        padding-right: 0.3rem;
+    }
+
     .rotation-row {
         display: flex;
         align-items: center;
@@ -1148,8 +1158,9 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                         </div>
                                     </div>
                                 </div>
-                                <div class="pane-toolbar-divider" aria-hidden="true"></div>
 
+                                <!-- 縮放控制群組本身是深色實心的 .ts-buttons 分段按鈕，已經自帶明顯的容器邊界，
+                                     跟工具那疊淺灰膠囊之間不需要再疊一條分隔線重複宣告「這裡是分界」。 -->
                                 <div class="ts-buttons">
                                     <button id="btnZoomOut" class="ts-button is-icon" aria-label="縮小畫面" data-tooltip="縮小畫面">
                                         <span class="ts-icon is-magnifying-glass-minus-icon" aria-hidden="true"></span>
