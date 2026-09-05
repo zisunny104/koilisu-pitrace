@@ -89,6 +89,11 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
         min-height: 0;
     }
 
+    /* 手機/平板是單欄堆疊版面，用不到欄寬拖曳；desktop+ 的 media query 會再打開 */
+    .col-resizer {
+        display: none;
+    }
+
     @media (min-width: 1024px) {
         /* 頁尾是 .main-content 的 flex 手足、同樣掛在 body 底下——如果把 100vh 鎖在 body 上，
            兩者會競爬同一個高度，頁尾沒辦法被推到視窗外。改鎖在 .main-content 自己身上：
@@ -123,6 +128,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
 
         .editor-shell {
             flex-direction: row;
+            gap: 0;
         }
 
         #pieceListSidebar {
@@ -135,7 +141,7 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
 
         #scanPaneBox {
             min-width: 0;
-            order: 2;
+            order: 3;
         }
 
         #editorDock {
@@ -143,7 +149,39 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
             width: var(--pitrace-dock-width);
             min-height: 0;
             overflow: hidden;
-            order: 3;
+            order: 5;
+        }
+
+        /* 三欄之間的可拖曳分隔線（取代原本固定的 gap:1rem）。寬版才需要調欄寬，
+           手機/平板堆疊版面用不到，預設隱藏；desktop+ 才顯示並提供拖曳/鍵盤互動。
+           寬度 1rem 剛好接手原本 gap 讓出的視覺間距，中間三點 grip 圖示純裝飾用
+           aria-hidden，實際可操作的是整個 .col-resizer（role="separator"）。 */
+        .col-resizer {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 1rem;
+            width: 1rem;
+            order: 2;
+            cursor: col-resize;
+            color: var(--ts-gray-400, #ccc);
+            touch-action: none;
+            border-radius: 4px;
+        }
+
+        #colResizerRight {
+            order: 4;
+        }
+
+        .col-resizer:hover,
+        .col-resizer.is-dragging {
+            background: var(--ts-gray-200, #e5e5e5);
+            color: var(--ts-primary-600, #2563eb);
+        }
+
+        .col-resizer:focus-visible {
+            outline: 2px solid var(--ts-primary-600, #2563eb);
+            outline-offset: -2px;
         }
 
         #previewPaneBox {
@@ -691,7 +729,8 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
     #main-content.is-focus-mode #projectToolbar,
     #main-content.is-focus-mode > .ts-divider,
     #main-content.is-focus-mode #editorDock,
-    #main-content.is-focus-mode #pieceListSidebar {
+    #main-content.is-focus-mode #pieceListSidebar,
+    #main-content.is-focus-mode .col-resizer {
         display: none !important;
     }
 
@@ -1088,6 +1127,10 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
 
                 <!-- 編輯器主體：左側物件清單 + 中央畫布 + 右側預覽/設定 dock（桌面以上固定側欄；平板/手機退回堆疊） -->
                 <div class="editor-shell" id="editorShell">
+                    <div class="col-resizer" id="colResizerLeft" role="separator" aria-orientation="vertical"
+                        aria-label="調整物件清單欄寬" tabindex="0" data-tooltip="拖曳調整欄寬（方向鍵微調、雙擊重設）">
+                        <span class="ts-icon is-grip-lines-vertical-icon" aria-hidden="true"></span>
+                    </div>
                     <div class="ts-box is-raised" id="scanPaneBox">
                         <div class="pane-card-header">
                             <span class="pane-card-header-title">
@@ -1213,6 +1256,11 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
                                 </div>
                             </div>
                         </div>
+                    </div>
+
+                    <div class="col-resizer" id="colResizerRight" role="separator" aria-orientation="vertical"
+                        aria-label="調整預覽／設定欄寬" tabindex="0" data-tooltip="拖曳調整欄寬（方向鍵微調、雙擊重設）">
+                        <span class="ts-icon is-grip-lines-vertical-icon" aria-hidden="true"></span>
                     </div>
 
                     <!-- 物件縮圖清單：獨立左欄，桌面版直向排列；不再跟預覽/設定擠在同一個右側 dock。 -->
