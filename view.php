@@ -966,11 +966,14 @@ $appVersion = $appConfig['version'] ?? '0.0.0';
     }
 
     /* Tocas 的 ts-snackbar 只提供膠囊樣式，定位／淡入淡出／自動消失都需要自己接上，
-       這裡讓它固定在畫面下方置中，作為 announce() 狀態訊息的可視化版本。 */
+       這裡讓它固定在畫面下方置中，作為 announce() 狀態訊息的可視化版本。.main-content 鎖了
+       viewport 高度（見上面「頁尾是 flex 手足」那段），畫布下方的浮動工具列
+       （.canvas-floating-toolbar）上緣實測落在離視窗底部約 11rem 處，這裡把 snackbar 的
+       bottom 拉到 12rem，讓它穩定浮在工具列上方、不會疊在一起。 */
     .pitrace-snackbar {
         position: fixed;
         left: 50%;
-        bottom: 1.5rem;
+        bottom: 12rem;
         transform: translate(-50%, 0.5rem);
         opacity: 0;
         pointer-events: none;
